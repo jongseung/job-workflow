@@ -13,6 +13,10 @@ import { LogViewerPage } from '@/features/logs/LogViewerPage';
 import { SettingsPage } from '@/features/settings/SettingsPage';
 import { AuditPage } from '@/features/audit/AuditPage';
 import { DataSourceListPage, DataSourceDetailPage, DataSourceFormPage } from '@/features/datasources';
+import { WorkflowListPage } from '@/features/workflows/WorkflowListPage';
+import { WorkflowEditorPage } from '@/features/workflows/WorkflowEditorPage';
+import { ModuleListPage } from '@/features/admin/ModuleListPage';
+import { ModuleFormPage } from '@/features/admin/ModuleFormPage';
 import { useUIStore } from '@/stores/uiStore';
 import { X, CheckCircle2, XCircle, AlertTriangle, Info } from 'lucide-react';
 
@@ -93,7 +97,13 @@ export default function App() {
             <Route path="datasources/new" element={<DataSourceFormPage mode="create" />} />
             <Route path="datasources/:id" element={<DataSourceDetailPage />} />
             <Route path="datasources/:id/edit" element={<DataSourceFormPage mode="edit" />} />
+            <Route path="workflows" element={<WorkflowListPage />} />
+            <Route path="admin/modules" element={<ModuleListPage />} />
+            <Route path="admin/modules/new" element={<ModuleFormPage mode="create" />} />
+            <Route path="admin/modules/:id/edit" element={<ModuleFormPage mode="edit" />} />
           </Route>
+          {/* Workflow editor — full-screen, no sidebar/header */}
+          <Route path="workflows/:id/edit" element={<AuthGuard><WorkflowEditorPage /></AuthGuard>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

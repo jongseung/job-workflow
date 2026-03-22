@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Briefcase, ScrollText, Settings, Zap, Shield, Database } from 'lucide-react';
+import { LayoutDashboard, Briefcase, ScrollText, Settings, Zap, Shield, Database, GitMerge, Boxes } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
@@ -7,6 +7,7 @@ import { useUIStore } from '@/stores/uiStore';
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/jobs', icon: Briefcase, label: 'Jobs' },
+  { to: '/workflows', icon: GitMerge, label: 'Workflows' },
   { to: '/logs', icon: ScrollText, label: 'Logs' },
   { to: '/datasources', icon: Database, label: 'Datasources' },
   { to: '/settings', icon: Settings, label: 'Settings' },
@@ -67,7 +68,13 @@ export function Sidebar() {
           <NavItem key={item.to} {...item} end={item.to === '/'} />
         ))}
         {user?.role === 'admin' && (
-          <NavItem to="/audit" icon={Shield} label="Audit Log" />
+          <>
+            <div className="pt-2 pb-1 px-4">
+              <span className="text-[9px] font-bold uppercase tracking-[0.18em]" style={{ color: '#2a2a35' }}>Admin</span>
+            </div>
+            <NavItem to="/admin/modules" icon={Boxes} label="Module Library" />
+            <NavItem to="/audit" icon={Shield} label="Audit Log" />
+          </>
         )}
       </nav>
 

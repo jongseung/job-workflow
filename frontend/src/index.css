@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800&family=Barlow:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 
 @theme {
@@ -177,3 +178,26 @@
   background: rgba(0, 212, 255, 0.2);
   color: var(--color-text-primary);
 }
+
+/* ── React Flow overrides ── */
+.react-flow__attribution { display: none !important; }
+.react-flow__controls-button {
+  background: #0D1117 !important;
+  border-color: rgba(255,255,255,0.06) !important;
+  fill: #484F58 !important;
+}
+.react-flow__controls-button:hover {
+  background: rgba(255,255,255,0.05) !important;
+  fill: #848D97 !important;
+}
+.react-flow__edge-path {
+  stroke: #334155;
+  stroke-width: 2;
+}
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: #818CF8 !important;
+}
+.react-flow__handle {
+  cursor: crosshair;
+}
+.react-flow__minimap-mask { fill: rgba(8,11,18,0.85) !important; }

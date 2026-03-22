@@ -4,5 +4,10 @@ from app.models.job_run import JobRun
 from app.models.job_log import JobLog
 from app.models.audit import AuditTrail
 from app.models.datasource import DataSource
+from app.models.module import StepModule
+from app.models.workflow import Workflow, WorkflowRun, WorkflowNodeRun
 
-__all__ = ["User", "Job", "JobRun", "JobLog", "AuditTrail", "DataSource"]
+__all__ = [
+    "User", "Job", "JobRun", "JobLog", "AuditTrail", "DataSource",
+    "StepModule", "Workflow", "WorkflowRun", "WorkflowNodeRun",
+]
