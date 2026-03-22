@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Clock, Save, Play, GitMerge, RefreshCw, Loader2, AlertTriangle } from 'lucide-react'
@@ -46,6 +46,8 @@ function moduleToNodeData(mod: StepModule): WorkflowNodeData {
     icon: mod.icon || undefined,
     color: mod.color || undefined,
     category: mod.category || undefined,
+    executorType: mod.executor_type,
+    outputSchema: mod.output_schema,
   }
 }
 
@@ -81,6 +83,23 @@ function formatScheduleLabel(
     return `${Math.round(intervalSecs / 3600)}h`
   }
   return '스케줄'
+}
+
+/** Get output field names for auto-mapping when connecting edges */
+function getOutputFieldsForAutoMap(srcData: WorkflowNodeData): string[] {
+  // From explicit output_schema
+  if (srcData.outputSchema?.properties) {
+    const props = srcData.outputSchema.properties as Record<string, unknown>
+    return Object.keys(props)
+  }
+  // Well-known defaults by executor type
+  const et = srcData.executorType
+  if (et === 'sql') return ['rows', 'count', 'columns']
+  if (et === 'http') return ['result']
+  if (et === 'python') return ['result']
+  // Trigger passes through initial data
+  if (srcData.moduleType === 'trigger') return ['result']
+  return ['result']
 }
 
 // ---------- inner component (needs ReactFlowProvider context) ----------
@@ -176,8 +195,47 @@ function EditorCanvas({
           eds
         )
       )
+
+      // Auto-map: populate target node's inputMapping from source node's output fields
+      if (params.source && params.target) {
+        setNodes((nds) => {
+          const sourceNode = nds.find((n) => n.id === params.source)
+          const targetNode = nds.find((n) => n.id === params.target)
+          if (!sourceNode || !targetNode) return nds
+
+          const srcData = sourceNode.data as WorkflowNodeData
+          const tgtData = targetNode.data as WorkflowNodeData
+
+          // Skip if target already has input mappings
+          if (tgtData.inputMapping && Object.keys(tgtData.inputMapping).length > 0) return nds
+
+          // Get source output fields
+          const outputFields = getOutputFieldsForAutoMap(srcData)
+          if (outputFields.length === 0) return nds
+
+          // Build auto-mapping: each output field → same-name input field
+          const autoMapping: Record<string, unknown> = {}
+          for (const field of outputFields) {
+            autoMapping[field] = {
+              type: 'node_output',
+              nodeId: params.source,
+              path: field,
+            }
+          }
+
+          return nds.map((n) =>
+            n.id === params.target
+              ? { ...n, data: { ...n.data, inputMapping: autoMapping } }
+              : n
+          )
+        })
+        addNotification({
+          type: 'info',
+          message: '입력 매핑이 자동 설정되었습니다. 매핑 탭에서 확인하세요.',
+        })
+      }
     },
-    [setEdges]
+    [setEdges, setNodes, addNotification]
   )
 
   const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {

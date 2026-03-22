@@ -25,6 +25,51 @@ interface NodeConfigPanelProps {
   workflowId: string
 }
 
+/** Extract known output fields from a node's data (output_schema or executor type defaults) */
+function extractOutputFields(
+  data: WorkflowNodeData
+): Array<{ path: string; type: string; example?: unknown }> {
+  // 1. From explicit output_schema
+  if (data.outputSchema?.properties) {
+    const props = data.outputSchema.properties as Record<
+      string,
+      Record<string, unknown>
+    >
+    return Object.entries(props).map(([name, def]) => ({
+      path: name,
+      type: (def?.type as string) || 'any',
+      example: def?.example as unknown,
+    }))
+  }
+
+  // 2. Well-known defaults by executor type
+  const et = data.executorType
+  if (et === 'sql') {
+    return [
+      { path: 'rows', type: 'array', example: '[{col: val}, …]' },
+      { path: 'count', type: 'integer', example: 42 },
+      { path: 'columns', type: 'array', example: '["id","name"]' },
+    ]
+  }
+  if (et === 'http') {
+    return [{ path: 'result', type: 'object', example: '{…}' }]
+  }
+  if (et === 'python') {
+    return [{ path: 'result', type: 'any', example: '__OUTPUT__ JSON' }]
+  }
+
+  // 3. By module type
+  if (data.moduleType === 'condition') {
+    return [{ path: '_branch', type: 'string', example: 'true/false' }]
+  }
+  if (data.moduleType === 'trigger') {
+    return [{ path: 'result', type: 'object', example: '초기 컨텍스트' }]
+  }
+
+  // fallback
+  return [{ path: 'result', type: 'any' }]
+}
+
 export function NodeConfigPanel({
   node,
   allNodes,
@@ -51,7 +96,7 @@ export function NodeConfigPanel({
     enabled: !!nodeData?.moduleId,
   })
 
-  // Compute upstream nodes (BFS from current node)
+  // Compute upstream nodes (BFS from current node) with output fields
   const upstreamOutputs: UpstreamOutput[] = (() => {
     if (!node) return []
     const visited = new Set<string>()
@@ -73,11 +118,14 @@ export function NodeConfigPanel({
         if (!parentNode) continue
         const pData = parentNode.data as WorkflowNodeData
 
+        // Extract output fields from output_schema or executor type defaults
+        const fields = extractOutputFields(pData)
+
         result.push({
           nodeId: parentId,
           nodeLabel: pData.label || parentId,
           moduleType: pData.moduleType || 'action',
-          fields: [],
+          fields,
         })
       }
     }
@@ -372,24 +420,100 @@ export function NodeConfigPanel({
                 <ArrowLeft className="w-6 h-6 mx-auto mb-2 opacity-40" />
                 이 노드에 연결된 이전 노드가 없습니다.
               </div>
-            ) : inputFields.length > 0 ? (
-              inputFields.map((field) => (
-                <MappableInput
-                  key={field.name}
-                  fieldName={field.name}
-                  label={field.label}
-                  value={
-                    (nodeData.inputMapping?.[field.name] as InputMapping | string | undefined) ?? null
-                  }
-                  upstreamOutputs={upstreamOutputs}
-                  onChange={(val) => handleMappingChange(field.name, val)}
-                  placeholder={field.description}
-                />
-              ))
             ) : (
-              <div className="text-center py-6 text-[12px] text-text-muted">
-                input_schema가 정의된 모듈을 선택하면 매핑 옵션이 표시됩니다.
-              </div>
+              <>
+                {/* Data flow guide */}
+                <div className="mb-3 p-2.5 rounded-lg bg-primary/5 border border-primary/15">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-primary mb-1.5">
+                    📥 이전 노드 출력 데이터
+                  </div>
+                  {upstreamOutputs.map((upstream) => {
+                    const umeta = NODE_TYPE_META[upstream.moduleType] || NODE_TYPE_META.action
+                    return (
+                      <div key={upstream.nodeId} className="mb-1.5 last:mb-0">
+                        <span className="text-[10px] font-semibold" style={{ color: umeta.color }}>
+                          {upstream.nodeLabel}
+                        </span>
+                        <span className="text-[10px] text-text-muted ml-1">→</span>
+                        <span className="text-[10px] font-mono text-text-secondary ml-1">
+                          {upstream.fields.map(f => f.path).join(', ') || 'result'}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* Mapped fields from input_schema */}
+                {inputFields.length > 0 ? (
+                  inputFields.map((field) => (
+                    <MappableInput
+                      key={field.name}
+                      fieldName={field.name}
+                      label={field.label}
+                      value={
+                        (nodeData.inputMapping?.[field.name] as InputMapping | string | undefined) ?? null
+                      }
+                      upstreamOutputs={upstreamOutputs}
+                      onChange={(val) => handleMappingChange(field.name, val)}
+                      placeholder={field.description}
+                    />
+                  ))
+                ) : (
+                  /* For modules without input_schema (python, etc.): show auto-mapped fields */
+                  <>
+                    <div className="text-[10px] text-text-muted mb-2">
+                      이전 노드 출력이 <code className="font-mono text-primary">input_data</code> 딕셔너리로 자동 전달됩니다.
+                    </div>
+                    {/* Show current auto-mappings */}
+                    {Object.entries(nodeData.inputMapping || {}).length > 0 ? (
+                      Object.entries(nodeData.inputMapping || {}).map(([fieldName, mapping]) => (
+                        <MappableInput
+                          key={fieldName}
+                          fieldName={fieldName}
+                          label={fieldName}
+                          value={mapping as InputMapping | string | undefined ?? null}
+                          upstreamOutputs={upstreamOutputs}
+                          onChange={(val) => handleMappingChange(fieldName, val)}
+                        />
+                      ))
+                    ) : (
+                      <div className="text-center py-3 text-[11px] text-text-muted opacity-60">
+                        노드 연결 시 자동 매핑됩니다
+                      </div>
+                    )}
+                    {/* Quick-add buttons for upstream fields not yet mapped */}
+                    {upstreamOutputs.flatMap(u => u.fields.map(f => ({ ...f, nodeId: u.nodeId, nodeLabel: u.nodeLabel }))).filter(
+                      f => !(nodeData.inputMapping || {})[f.path]
+                    ).length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-border">
+                        <div className="text-[10px] font-semibold uppercase tracking-wider text-text-muted mb-2">
+                          + 매핑 추가
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {upstreamOutputs.flatMap(u =>
+                            u.fields.map(f => ({ ...f, nodeId: u.nodeId, nodeLabel: u.nodeLabel }))
+                          ).filter(
+                            f => !(nodeData.inputMapping || {})[f.path]
+                          ).map(f => (
+                            <button
+                              key={`${f.nodeId}-${f.path}`}
+                              type="button"
+                              onClick={() => handleMappingChange(f.path, {
+                                type: 'node_output',
+                                nodeId: f.nodeId,
+                                path: f.path,
+                              })}
+                              className="text-[10px] font-mono px-2 py-0.5 rounded-full border border-primary/30 text-primary bg-primary/5 hover:bg-primary/15 transition-colors"
+                            >
+                              + {f.path}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
             )}
           </div>
         )}

@@ -36,8 +36,27 @@ export interface WorkflowNodeData {
   icon?: string
   color?: string
   category?: string
+  executorType?: string
+  outputSchema?: Record<string, unknown> | null
   executionStatus?: 'running' | 'success' | 'failed' | 'skipped'
   [key: string]: unknown
+}
+
+/** Extract top-level field names from an output schema or executor type. */
+function getOutputFields(nodeData: WorkflowNodeData): string[] {
+  // From explicit output_schema
+  if (nodeData.outputSchema?.properties) {
+    const props = nodeData.outputSchema.properties as Record<string, unknown>
+    return Object.keys(props).slice(0, 5)
+  }
+  // Well-known defaults by executor type
+  const etype = nodeData.executorType
+  if (etype === 'sql') return ['rows', 'count', 'columns']
+  if (etype === 'http') return ['result']
+  if (etype === 'python') return ['result']
+  // By module type
+  if (nodeData.moduleType === 'condition') return ['_branch']
+  return []
 }
 
 function WorkflowNodeComponent({ data, selected }: NodeProps) {
@@ -47,6 +66,7 @@ function WorkflowNodeComponent({ data, selected }: NodeProps) {
   const execStatus = nodeData.executionStatus
   const isCondition = nodeData.moduleType === 'condition'
   const isTrigger = nodeData.moduleType === 'trigger'
+  const outputFields = getOutputFields(nodeData)
 
   return (
     <div
@@ -111,6 +131,24 @@ function WorkflowNodeComponent({ data, selected }: NodeProps) {
             >
               {nodeData.category}
             </span>
+          </div>
+        )}
+
+        {/* Output fields hint */}
+        {outputFields.length > 0 && (
+          <div className="px-5 pb-2.5">
+            <div className="flex items-center gap-1 flex-wrap">
+              <span className="text-[9px] text-white/25 mr-0.5">출력:</span>
+              {outputFields.map((f) => (
+                <span
+                  key={f}
+                  className="text-[9px] font-mono px-1 py-px rounded"
+                  style={{ background: `${color}15`, color: `${color}90` }}
+                >
+                  {f}
+                </span>
+              ))}
+            </div>
           </div>
         )}
       </div>
