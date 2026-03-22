@@ -101,7 +101,7 @@ async def run_workflow(
             return
 
         run.status = "running"
-        run.started_at = datetime.now(timezone.utc)
+        run.started_at = datetime.utcnow()
         db.commit()
 
         await _broadcast("workflow_run_update", {
@@ -127,10 +127,9 @@ async def run_workflow(
         run = db.query(WorkflowRun).filter(WorkflowRun.id == workflow_run_id).first()
         if run:
             run.status = final_status
-            run.finished_at = datetime.now(timezone.utc)
+            run.finished_at = datetime.utcnow()
             if run.started_at:
-                sa = run.started_at if run.started_at.tzinfo else run.started_at.replace(tzinfo=timezone.utc)
-                run.duration_ms = int((run.finished_at - sa).total_seconds() * 1000)
+                run.duration_ms = int((run.finished_at - run.started_at).total_seconds() * 1000)
             db.commit()
 
         await _broadcast("workflow_run_update", {
@@ -266,7 +265,7 @@ async def _execute_node(
         status="running",
         input_data=full_input,
         execution_order=execution_order,
-        started_at=datetime.now(timezone.utc),
+        started_at=datetime.utcnow(),
     )
     db.add(node_run)
     db.commit()
@@ -279,17 +278,17 @@ async def _execute_node(
         "status": "running",
     })
 
-    started = datetime.now(timezone.utc)
+    started = datetime.utcnow()
     try:
         module = db.query(StepModule).filter(StepModule.id == module_id).first() if module_id else None
         output = await _route_executor(node_type, module, full_input, nd)
 
-        finished = datetime.now(timezone.utc)
+        finished = datetime.utcnow()
         duration_ms = int((finished - started).total_seconds() * 1000)
         output_dict = output if isinstance(output, dict) else {"result": output}
 
         node_run.status = "success"
-        node_run.output_data = output_dict
+        node_run.output_data = _json_safe(output_dict)
         node_run.finished_at = finished
         node_run.duration_ms = duration_ms
         db.commit()
@@ -297,7 +296,7 @@ async def _execute_node(
         # Build a brief output summary for the log (avoid huge payloads)
         output_summary = _summarize_output(output_dict)
 
-        await _broadcast("workflow_node_update", {
+        broadcast_data: dict = {
             "workflow_run_id": workflow_run_id,
             "node_id": node_id,
             "node_label": label,
@@ -305,14 +304,20 @@ async def _execute_node(
             "status": "success",
             "duration_ms": duration_ms,
             "output_summary": output_summary,
-        })
+        }
+        # For HTML nodes, include the rendered HTML so frontend can preview it
+        if isinstance(output_dict, dict) and "html" in output_dict:
+            broadcast_data["output_html"] = output_dict["html"]
+        await _broadcast("workflow_node_update", broadcast_data)
         return output_dict
 
     except Exception as exc:
-        finished = datetime.now(timezone.utc)
+        db.rollback()  # Clear any pending rollback state
+        finished = datetime.utcnow()
         duration_ms = int((finished - started).total_seconds() * 1000)
+        node_run = db.merge(node_run)
         node_run.status = "failed"
-        node_run.error_message = str(exc)
+        node_run.error_message = str(exc)[:2000]
         node_run.finished_at = finished
         node_run.duration_ms = duration_ms
         db.commit()
@@ -365,6 +370,8 @@ async def _route_executor(
         return await _run_http(module, input_data, node_data)
     if module.executor_type == "sql":
         return await _run_sql(module, input_data, node_data)
+    if module.executor_type == "html":
+        return _run_html(module, input_data, node_data)
     if module.executor_type == "builtin":
         return _run_builtin(module, input_data)
 
@@ -376,8 +383,12 @@ async def _run_python_code(code: str, input_data: dict) -> dict:
     wrapper = (
         "import json as __json, sys as __sys\n"
         "input_data = __json.loads(__sys.stdin.read() or '{}')\n"
+        "result = None\n"
         "# ── user code ──\n"
         f"{code}\n"
+        "# ── auto-output ──\n"
+        "if result is not None:\n"
+        "    print('__OUTPUT__:' + __json.dumps(result, default=str, ensure_ascii=False))\n"
     )
 
     tmp_fd, tmp_path = tempfile.mkstemp(suffix=".py", prefix="wf_node_")
@@ -498,6 +509,40 @@ async def _run_http(module: StepModule, input_data: dict, node_data: dict) -> di
     return result if isinstance(result, dict) else {"result": result}
 
 
+def _serialize_cell(cell):
+    """Convert DB cell values to JSON-safe types."""
+    if cell is None:
+        return None
+    if hasattr(cell, "isoformat"):  # datetime, date, time
+        return cell.isoformat()
+    from decimal import Decimal
+    if isinstance(cell, Decimal):
+        return int(cell) if cell == int(cell) else float(cell)
+    if isinstance(cell, bytes):
+        return cell.decode("utf-8", errors="replace")
+    return cell
+
+
+def _json_safe(obj):
+    """Recursively convert non-JSON-serializable types."""
+    import json
+    try:
+        json.dumps(obj)
+        return obj
+    except (TypeError, ValueError):
+        pass
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    if hasattr(obj, "isoformat"):
+        return obj.isoformat()
+    from decimal import Decimal
+    if isinstance(obj, Decimal):
+        return int(obj) if obj == int(obj) else float(obj)
+    return str(obj)
+
+
 async def _run_sql(module: StepModule, input_data: dict, node_data: dict) -> dict:
     """SQL executor: node config (datasource_id/query) takes priority over module config."""
     node_cfg = node_data.get("config") or {}
@@ -526,8 +571,7 @@ async def _run_sql(module: StepModule, input_data: dict, node_data: dict) -> dic
             cur.execute(query)
             col_names = [d[0] for d in (cur.description or [])]
             rows = [
-                {c: (cell.isoformat() if hasattr(cell, "isoformat") else cell)
-                 for c, cell in zip(col_names, row)}
+                {c: _serialize_cell(cell) for c, cell in zip(col_names, row)}
                 for row in cur.fetchall()
             ]
             result = {"rows": rows, "count": len(rows), "columns": col_names}
@@ -548,6 +592,8 @@ async def _maybe_save_output(node_cfg: dict, data: Any) -> None:
     datasource_id = node_cfg.get("output_datasource_id")
     table = node_cfg.get("output_table", "workflow_output")
     write_mode = node_cfg.get("output_write_mode", "append")
+
+    upsert_key = node_cfg.get("output_upsert_key") or None
 
     if not datasource_id or not table:
         return
@@ -571,7 +617,11 @@ async def _maybe_save_output(node_cfg: dict, data: Any) -> None:
         try:
             ds = db.query(DataSource).filter(DataSource.id == datasource_id).first()
             if ds:
-                insert_rows_to_table(ds, table, rows, mode=write_mode)
+                insert_rows_to_table(
+                    ds, table, rows,
+                    write_mode=write_mode,
+                    upsert_key=upsert_key if write_mode == "upsert" else None,
+                )
         finally:
             db.close()
     except Exception as exc:
@@ -580,10 +630,57 @@ async def _maybe_save_output(node_cfg: dict, data: Any) -> None:
         logging.getLogger(__name__).warning(f"Output save failed: {exc}")
 
 
-def _run_condition(module: StepModule | None, input_data: dict, node_data: dict) -> dict:
-    condition = (node_data.get("config") or {}).get("condition", "True")
+def _run_html(module: StepModule | None, input_data: dict, node_data: dict) -> dict:
+    """HTML Report executor: render Jinja2 template with input_data → HTML string."""
+    from jinja2 import Environment, BaseLoader, select_autoescape
+
+    cfg = node_data.get("config") or {}
+    template_str = cfg.get("template") or (module.executor_code if module else None) or ""
+    title = cfg.get("title") or "Report"
+
+    if not template_str.strip():
+        raise ValueError("HTML 노드에 템플릿이 없습니다. 설정에서 HTML 템플릿을 입력해주세요.")
+
+    env = Environment(
+        loader=BaseLoader(),
+        autoescape=select_autoescape(default_for_string=False),
+    )
+
+    # Add useful filters
+    def fmt_number(value, decimals=0):
+        try:
+            return f"{float(value):,.{int(decimals)}f}"
+        except (ValueError, TypeError):
+            return str(value)
+
+    def fmt_percent(value, decimals=1):
+        try:
+            return f"{float(value):.{int(decimals)}f}%"
+        except (ValueError, TypeError):
+            return str(value)
+
+    env.filters["number"] = fmt_number
+    env.filters["percent"] = fmt_percent
+
     try:
-        result = bool(eval(condition, {"__builtins__": {}}, input_data))  # noqa: S307
+        tmpl = env.from_string(template_str)
+        html = tmpl.render(data=input_data, **input_data)
+    except Exception as exc:
+        raise ValueError(f"HTML 템플릿 렌더링 실패: {exc}")
+
+    return {
+        "html": html,
+        "title": title,
+        "template_length": len(template_str),
+        "rendered_length": len(html),
+    }
+
+
+def _run_condition(module: StepModule | None, input_data: dict, node_data: dict) -> dict:
+    cfg = node_data.get("config") or {}
+    condition = cfg.get("expression") or cfg.get("condition", "True")
+    try:
+        result = bool(eval(condition, {"__builtins__": {}}, {"input_data": input_data, **input_data}))  # noqa: S307
         return {"_branch": "true" if result else "false", **input_data}
     except Exception as exc:
         return {"_branch": "false", "_error": str(exc), **input_data}

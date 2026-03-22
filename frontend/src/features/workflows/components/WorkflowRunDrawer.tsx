@@ -13,6 +13,7 @@ export interface RunLogEntry {
   nodeType?: string
   durationMs?: number
   outputSummary?: string
+  outputHtml?: string   // rendered HTML from html nodes
   error?: string
   runStatus?: string    // for run_end
 }
@@ -146,6 +147,7 @@ export function WorkflowRunDrawer({ workflowId, workflowName, runId, onClose }: 
             nodeType: data.node_type,
             durationMs: data.duration_ms,
             outputSummary: data.output_summary,
+            outputHtml: data.output_html,
             error: data.error,
           }
           setLogs((prev) => {
@@ -308,21 +310,56 @@ function LogLine({ entry }: { entry: RunLogEntry }) {
 
   if (entry.kind === 'node_success') {
     return (
-      <div className="flex items-start gap-2 py-0.5">
-        <span className="text-text-muted text-[10px] mt-0.5">{formatTime(entry.ts)}</span>
-        <CheckCircle2 className="w-3.5 h-3.5 text-success flex-shrink-0 mt-0.5" />
-        {typeLabel && (
-          <span className="text-[10px] px-1 rounded bg-bg-tertiary text-text-muted mt-0.5">{typeLabel}</span>
-        )}
-        <div className="flex-1 min-w-0">
-          <span className="text-text-primary">{entry.nodeLabel}</span>
-          {entry.durationMs !== undefined && (
-            <span className="text-text-muted ml-1.5 text-[11px]">({formatDuration(entry.durationMs)})</span>
+      <div className="py-0.5">
+        <div className="flex items-start gap-2">
+          <span className="text-text-muted text-[10px] mt-0.5">{formatTime(entry.ts)}</span>
+          <CheckCircle2 className="w-3.5 h-3.5 text-success flex-shrink-0 mt-0.5" />
+          {typeLabel && (
+            <span className="text-[10px] px-1 rounded bg-bg-tertiary text-text-muted mt-0.5">{typeLabel}</span>
           )}
-          {entry.outputSummary && (
-            <span className="text-text-muted ml-1.5 text-[11px]">→ {entry.outputSummary}</span>
-          )}
+          <div className="flex-1 min-w-0">
+            <span className="text-text-primary">{entry.nodeLabel}</span>
+            {entry.durationMs !== undefined && (
+              <span className="text-text-muted ml-1.5 text-[11px]">({formatDuration(entry.durationMs)})</span>
+            )}
+            {entry.outputSummary && (
+              <span className="text-text-muted ml-1.5 text-[11px]">→ {entry.outputSummary}</span>
+            )}
+            {entry.outputHtml && (
+              <button
+                type="button"
+                onClick={() => setExpanded((x) => !x)}
+                className="ml-2 text-[11px] text-emerald-400/80 hover:text-emerald-400 underline"
+              >
+                {expanded ? 'HTML 접기' : 'HTML 보기'}
+              </button>
+            )}
+          </div>
         </div>
+        {expanded && entry.outputHtml && (
+          <div className="ml-10 mt-1.5 rounded-lg overflow-hidden border border-emerald-500/20">
+            <div className="flex items-center justify-between px-3 py-1.5 bg-emerald-500/10 border-b border-emerald-500/20">
+              <span className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wider">HTML Report Preview</span>
+              <button
+                type="button"
+                onClick={() => {
+                  const win = window.open('', '_blank')
+                  if (win) { win.document.write(entry.outputHtml!); win.document.close() }
+                }}
+                className="text-[10px] text-emerald-400/70 hover:text-emerald-400 transition-colors"
+              >
+                새 탭에서 열기 ↗
+              </button>
+            </div>
+            <iframe
+              srcDoc={entry.outputHtml}
+              title="HTML Report"
+              className="w-full border-0 bg-white"
+              style={{ height: 320 }}
+              sandbox="allow-same-origin"
+            />
+          </div>
+        )}
       </div>
     )
   }

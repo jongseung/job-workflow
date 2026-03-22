@@ -131,9 +131,36 @@ export function NodeTestPanel({ workflowId, nodeId, nodeData }: NodeTestPanelPro
             )}
 
             {testMut.data.status === 'success' && testMut.data.output && (
-              <pre className="text-text-secondary font-mono text-[10px] whitespace-pre-wrap overflow-x-auto max-h-32">
-                {JSON.stringify(testMut.data.output, null, 2)}
-              </pre>
+              <>
+                {/* HTML output preview */}
+                {testMut.data.output.html && (
+                  <div className="mb-2 rounded-lg overflow-hidden border border-emerald-500/20">
+                    <div className="flex items-center justify-between px-2 py-1 bg-emerald-500/10 border-b border-emerald-500/20">
+                      <span className="text-[9px] font-semibold text-emerald-400 uppercase tracking-wider">HTML Preview</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const win = window.open('', '_blank')
+                          if (win) { win.document.write(testMut.data!.output.html); win.document.close() }
+                        }}
+                        className="text-[9px] text-emerald-400/70 hover:text-emerald-400 transition-colors"
+                      >
+                        새 탭 ↗
+                      </button>
+                    </div>
+                    <iframe
+                      srcDoc={testMut.data.output.html}
+                      title="HTML Preview"
+                      className="w-full border-0 bg-white"
+                      style={{ height: 200 }}
+                      sandbox="allow-same-origin"
+                    />
+                  </div>
+                )}
+                <pre className="text-text-secondary font-mono text-[10px] whitespace-pre-wrap overflow-x-auto max-h-32">
+                  {JSON.stringify(testMut.data.output, null, 2)}
+                </pre>
+              </>
             )}
           </div>
         </div>

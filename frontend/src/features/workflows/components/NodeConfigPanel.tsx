@@ -12,6 +12,7 @@ import type { InputMapping } from '../../../api/workflows'
 import { SqlConfigEditor } from './config/SqlConfigEditor'
 import { HttpConfigEditor } from './config/HttpConfigEditor'
 import { PythonConfigEditor } from './config/PythonConfigEditor'
+import { HtmlConfigEditor } from './config/HtmlConfigEditor'
 import { OutputConfigSection } from './config/OutputConfigSection'
 import { NodeTestPanel } from './config/NodeTestPanel'
 
@@ -56,6 +57,12 @@ function extractOutputFields(
   }
   if (et === 'python') {
     return [{ path: 'result', type: 'any', example: '__OUTPUT__ JSON' }]
+  }
+  if (et === 'html') {
+    return [
+      { path: 'html', type: 'string', example: '<html>...' },
+      { path: 'title', type: 'string', example: 'Report Title' },
+    ]
   }
 
   // 3. By module type
@@ -172,7 +179,7 @@ export function NodeConfigPanel({
   if (!node || !nodeData) {
     return (
       <div
-        className="flex-shrink-0 h-full flex flex-col items-center justify-center border-l border-border bg-bg-card relative"
+        className="flex-shrink-0 h-full flex flex-col border-l border-border bg-bg-card relative"
         style={{ width: panelWidth }}
       >
         {/* Resize handle */}
@@ -182,8 +189,14 @@ export function NodeConfigPanel({
         >
           <div className="absolute top-1/2 -translate-y-1/2 left-0 w-1 h-8 rounded-full bg-border group-hover:bg-primary/50 group-active:bg-primary transition-colors" />
         </div>
-        <GitMerge className="w-10 h-10 text-text-muted mb-3 opacity-30" />
-        <div className="text-[12px] text-text-muted">노드를 클릭하여 설정하세요</div>
+        {/* Top bar — aligned h-12 */}
+        <div className="h-12 flex items-center px-4 border-b border-border flex-shrink-0">
+          <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-text-muted">설정</span>
+        </div>
+        <div className="flex-1 flex flex-col items-center justify-center">
+          <GitMerge className="w-10 h-10 text-text-muted mb-3 opacity-30" />
+          <div className="text-[12px] text-text-muted">노드를 클릭하여 설정하세요</div>
+        </div>
       </div>
     )
   }
@@ -253,26 +266,26 @@ export function NodeConfigPanel({
         <div className="absolute top-1/2 -translate-y-1/2 left-0 w-1 h-8 rounded-full bg-border group-hover:bg-primary/50 group-active:bg-primary transition-colors" />
       </div>
 
-      {/* Header */}
+      {/* Top bar — h-12 aligned with toolbar */}
       <div
-        className="flex items-center justify-between px-4 py-3 border-b"
+        className="h-12 flex items-center justify-between px-4 border-b flex-shrink-0"
         style={{ borderColor: `${meta.color}30`, background: `${meta.color}06` }}
       >
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           <Icon size={16} style={{ color: meta.color, flexShrink: 0 }} />
-          <div>
+          <div className="min-w-0">
             <div
-              className="text-[10px] font-bold uppercase tracking-wider"
+              className="text-[9px] font-bold uppercase tracking-wider leading-none"
               style={{ color: meta.color }}
             >
               {meta.label}
             </div>
-            <div className="text-[13px] font-semibold text-text-primary">
+            <div className="text-[12px] font-semibold text-text-primary truncate leading-tight mt-0.5">
               {nodeData.label}
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 flex-shrink-0">
           <button
             type="button"
             onClick={() => onDeleteNode(node.id)}
@@ -404,6 +417,16 @@ export function NodeConfigPanel({
               />
             )}
 
+            {/* HTML executor */}
+            {executorType === 'html' && (
+              <HtmlConfigEditor
+                template={(cfg.template as string) ?? moduleInfo?.executor_code ?? ''}
+                title={(cfg.title as string) ?? ''}
+                onChange={handleConfigBatch}
+                defaultTemplate={moduleInfo?.executor_code ?? undefined}
+              />
+            )}
+
             {/* Transform node (python variant) */}
             {moduleType === 'transform' && executorType !== 'python' && (
               <PythonConfigEditor
@@ -453,6 +476,8 @@ export function NodeConfigPanel({
                   output_datasource_id: cfg.output_datasource_id as string,
                   output_table: cfg.output_table as string,
                   output_write_mode: cfg.output_write_mode as 'append' | 'replace' | 'upsert',
+                  output_upsert_key: cfg.output_upsert_key as string,
+                  output_format: cfg.output_format as 'jsonl' | 'csv',
                 }}
                 onChange={handleConfigBatch}
               />

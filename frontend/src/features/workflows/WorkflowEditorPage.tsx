@@ -1,7 +1,7 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Clock, Save, Play, GitMerge, RefreshCw, Loader2, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, Clock, Save, Play, GitMerge, RefreshCw, Loader2, AlertTriangle, Check } from 'lucide-react'
 import { WorkflowScheduleModal } from './components/WorkflowScheduleModal'
 import { WorkflowRunDrawer } from './components/WorkflowRunDrawer'
 import {
@@ -25,6 +25,7 @@ import '@xyflow/react/dist/style.css'
 import { workflowsApi, type CanvasNode, type CanvasEdge } from '../../api/workflows'
 import { type StepModule } from '../../api/modules'
 import { WorkflowNode, nodeTypes } from './components/nodes/WorkflowNode'
+import { edgeTypes } from './components/edges/DeletableEdge'
 import { ModuleSidebar } from './components/ModuleSidebar'
 import { NodeConfigPanel } from './components/NodeConfigPanel'
 import type { WorkflowNodeData } from './components/nodes/WorkflowNode'
@@ -87,19 +88,25 @@ function formatScheduleLabel(
 
 /** Get output field names for auto-mapping when connecting edges */
 function getOutputFieldsForAutoMap(srcData: WorkflowNodeData): string[] {
-  // From explicit output_schema
   if (srcData.outputSchema?.properties) {
     const props = srcData.outputSchema.properties as Record<string, unknown>
     return Object.keys(props)
   }
-  // Well-known defaults by executor type
   const et = srcData.executorType
   if (et === 'sql') return ['rows', 'count', 'columns']
   if (et === 'http') return ['result']
   if (et === 'python') return ['result']
-  // Trigger passes through initial data
   if (srcData.moduleType === 'trigger') return ['result']
   return ['result']
+}
+
+/** Stable fingerprint for dirty detection */
+function fingerprint(nodes: Node[], edges: Edge[]): string {
+  const n = nodes.map(({ id, position, data }) => ({ id, position, data }))
+  const e = edges.map(({ id, source, target, sourceHandle, targetHandle, data }) => ({
+    id, source, target, sourceHandle, targetHandle, data,
+  }))
+  return JSON.stringify({ n, e })
 }
 
 // ---------- inner component (needs ReactFlowProvider context) ----------
@@ -130,7 +137,40 @@ function EditorCanvas({
   const [runId, setRunId] = useState<string | null>(null)
   const [dragModule, setDragModule] = useState<StepModule | null>(null)
   const [showSchedule, setShowSchedule] = useState(false)
+  const [justSaved, setJustSaved] = useState(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
+
+  // ── Dirty state tracking ──
+  const savedFingerprint = useRef(fingerprint(initialNodes, initialEdges))
+  const isDirty = useMemo(
+    () => fingerprint(nodes, edges) !== savedFingerprint.current,
+    [nodes, edges]
+  )
+
+  // ── Keyboard shortcuts ──
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Ctrl/Cmd+S → save
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault()
+        if (isDirty && !saveMut.isPending) saveMut.mutate()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  })
+
+  // ── Unsaved changes warning on browser back/close ──
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault()
+        e.returnValue = ''
+      }
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [isDirty])
 
   // Save mutation
   const saveMut = useMutation({
@@ -142,8 +182,11 @@ function EditorCanvas({
         },
       }),
     onSuccess: () => {
+      savedFingerprint.current = fingerprint(nodes, edges)
       qc.invalidateQueries({ queryKey: ['workflow', workflowId] })
       addNotification({ type: 'success', message: '저장되었습니다' })
+      setJustSaved(true)
+      setTimeout(() => setJustSaved(false), 1500)
     },
     onError: () => addNotification({ type: 'error', message: '저장 실패' }),
   })
@@ -164,6 +207,7 @@ function EditorCanvas({
       setRunId(null)
     },
     onSuccess: (res) => {
+      savedFingerprint.current = fingerprint(nodes, edges)
       setRunning(false)
       setRunId(res.data.id)
     },
@@ -172,6 +216,17 @@ function EditorCanvas({
       addNotification({ type: 'error', message: '실행 실패' })
     },
   })
+
+  // Back navigation with dirty check
+  const handleBack = useCallback(() => {
+    if (isDirty) {
+      if (window.confirm('저장하지 않은 변경사항이 있습니다. 나가시겠습니까?')) {
+        navigate('/workflows')
+      }
+    } else {
+      navigate('/workflows')
+    }
+  }, [isDirty, navigate])
 
   const onConnect: OnConnect = useCallback(
     (params: Connection) => {
@@ -185,7 +240,7 @@ function EditorCanvas({
         addEdge(
           {
             ...params,
-            type: 'smoothstep',
+            type: 'deletable',
             animated: false,
             style: {
               stroke: branch === 'true' ? '#00C48C' : branch === 'false' ? '#EF4444' : '#2a2a32',
@@ -197,7 +252,6 @@ function EditorCanvas({
         )
       )
 
-      // Auto-map: populate target node's inputMapping from source node's output fields
       if (params.source && params.target) {
         setNodes((nds) => {
           const sourceNode = nds.find((n) => n.id === params.source)
@@ -207,14 +261,11 @@ function EditorCanvas({
           const srcData = sourceNode.data as WorkflowNodeData
           const tgtData = targetNode.data as WorkflowNodeData
 
-          // Skip if target already has input mappings
           if (tgtData.inputMapping && Object.keys(tgtData.inputMapping).length > 0) return nds
 
-          // Get source output fields
           const outputFields = getOutputFieldsForAutoMap(srcData)
           if (outputFields.length === 0) return nds
 
-          // Build auto-mapping: each output field → same-name input field
           const autoMapping: Record<string, unknown> = {}
           for (const field of outputFields) {
             autoMapping[field] = {
@@ -315,25 +366,31 @@ function EditorCanvas({
         {/* Toolbar */}
         <div className="h-12 flex items-center justify-between px-4 border-b border-border bg-bg-card flex-shrink-0">
           {/* Left: back + name */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 min-w-0">
             <button
               type="button"
-              onClick={() => navigate('/workflows')}
-              className="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-hover transition-all"
+              onClick={handleBack}
+              className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-hover transition-all group"
+              title="워크플로우 목록으로 돌아가기"
             >
-              <ArrowLeft className="w-4 h-4" />
+              <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform" />
+              <span className="text-[12px] font-medium">목록으로</span>
             </button>
-            <div className="flex items-center gap-2">
-              <GitMerge className="w-3.5 h-3.5 text-primary" />
-              <span className="text-sm font-semibold text-text-primary">
+            <div className="w-px h-5 bg-border flex-shrink-0" />
+            <div className="flex items-center gap-1.5 min-w-0">
+              <GitMerge className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+              <span className="text-[13px] font-semibold text-text-primary truncate">
                 {workflowName}
               </span>
+              {isDirty && (
+                <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-warning" title="저장하지 않은 변경사항" />
+              )}
             </div>
           </div>
 
           {/* Center: counts */}
           <div className="flex items-center gap-4">
-            <span className="text-xs text-text-muted">
+            <span className="text-[11px] text-text-muted tabular-nums">
               {nodes.length} 노드 · {edges.length} 연결
             </span>
           </div>
@@ -344,10 +401,10 @@ function EditorCanvas({
             <button
               type="button"
               onClick={() => setShowSchedule(true)}
-              className={`flex items-center gap-2 h-8 px-3 rounded-lg text-[12px] font-medium transition-all border ${
+              className={`relative flex items-center gap-2 h-8 px-3 rounded-lg text-[12px] font-medium transition-all border ${
                 isScheduled
                   ? 'bg-primary/8 border-primary/30 text-primary'
-                  : 'border-border text-text-muted hover:text-text-secondary hover:border-border'
+                  : 'border-border text-text-muted hover:text-text-secondary hover:border-border-light'
               }`}
               title="스케줄 설정"
             >
@@ -363,21 +420,39 @@ function EditorCanvas({
                     workflowData.interval_seconds
                   )
                 : '스케줄'}
+              {isScheduled && (
+                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-primary animate-pulse" />
+              )}
             </button>
 
-            {/* Save button */}
+            {/* Save button — dynamic state */}
             <button
               type="button"
               onClick={() => saveMut.mutate()}
-              disabled={saving || saveMut.isPending}
-              className="flex items-center gap-2 h-8 px-3 rounded-lg text-[12px] font-medium border border-border text-text-muted hover:text-text-primary hover:border-border hover:bg-bg-hover transition-all disabled:opacity-40"
+              disabled={saveMut.isPending || justSaved}
+              className={`
+                relative flex items-center gap-2 h-8 px-3 rounded-lg text-[12px] font-medium border transition-all
+                ${justSaved
+                  ? 'border-success/50 bg-success/10 text-success'
+                  : isDirty
+                    ? 'border-primary/50 bg-primary/10 text-primary shadow-[0_0_12px_rgba(0,212,255,0.12)] hover:bg-primary/15 hover:shadow-[0_0_16px_rgba(0,212,255,0.18)]'
+                    : 'border-border text-text-muted/50 cursor-default'
+                }
+                disabled:opacity-70
+              `}
+              title={isDirty ? '변경사항 저장 (⌘S)' : '변경사항 없음'}
             >
               {saveMut.isPending ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : justSaved ? (
+                <Check className="w-3.5 h-3.5" />
               ) : (
                 <Save className="w-3.5 h-3.5" />
               )}
-              저장
+              {justSaved ? '저장됨' : '저장'}
+              {isDirty && !saveMut.isPending && !justSaved && (
+                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-primary animate-pulse" />
+              )}
             </button>
 
             {/* Run button */}
@@ -397,7 +472,7 @@ function EditorCanvas({
           </div>
         </div>
 
-        {/* React Flow canvas — n8n-style */}
+        {/* React Flow canvas */}
         <div ref={wrapperRef} className="flex-1" onDragOver={onDragOver} onDrop={onDrop}>
           <ReactFlow
             nodes={nodes}
@@ -409,12 +484,13 @@ function EditorCanvas({
             onEdgeClick={onEdgeClick}
             onPaneClick={onPaneClick}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             fitView
             fitViewOptions={{ padding: 0.3 }}
             minZoom={0.2}
             maxZoom={3}
             defaultEdgeOptions={{
-              type: 'smoothstep',
+              type: 'deletable',
               animated: false,
               style: { strokeWidth: 2, stroke: '#2a2a32' },
             }}
@@ -548,7 +624,7 @@ export function WorkflowEditorPage() {
     target: e.target,
     sourceHandle: e.sourceHandle ?? undefined,
     targetHandle: e.targetHandle ?? undefined,
-    type: 'smoothstep',
+    type: 'deletable',
     animated: false,
     style: {
       stroke: e.data?.branch === 'true'

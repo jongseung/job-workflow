@@ -8,6 +8,7 @@ from sqlalchemy import func, cast, Date, text
 from app.database import get_db
 from app.models.job import Job
 from app.models.job_run import JobRun
+from app.models.workflow import Workflow, WorkflowRun
 from app.scheduler.engine import get_scheduler_status
 from app.core.dependencies import get_current_user
 from app.models.user import User
@@ -56,6 +57,15 @@ def get_stats(
     scheduler = get_scheduler_status()
     uptime_seconds = (datetime.now(timezone.utc) - _start_time).total_seconds()
 
+    # Workflow stats
+    total_workflows = db.query(func.count(Workflow.id)).scalar() or 0
+    active_workflows = db.query(func.count(Workflow.id)).filter(Workflow.is_active == True).scalar() or 0
+    wf_total_runs = db.query(func.count(WorkflowRun.id)).scalar() or 0
+    wf_success_runs = db.query(func.count(WorkflowRun.id)).filter(WorkflowRun.status == "success").scalar() or 0
+    wf_failed_runs = db.query(func.count(WorkflowRun.id)).filter(WorkflowRun.status == "failed").scalar() or 0
+    wf_running_now = db.query(func.count(WorkflowRun.id)).filter(WorkflowRun.status == "running").scalar() or 0
+    wf_success_rate = (wf_success_runs / wf_total_runs * 100) if wf_total_runs > 0 else 0
+
     return {
         "total_jobs": total_jobs,
         "active_jobs": active_jobs,
@@ -68,6 +78,14 @@ def get_stats(
         "scheduler_running": scheduler["running"],
         "scheduled_jobs": scheduler["job_count"],
         "uptime_seconds": int(uptime_seconds),
+        # Workflow stats
+        "total_workflows": total_workflows,
+        "active_workflows": active_workflows,
+        "wf_total_runs": wf_total_runs,
+        "wf_success_runs": wf_success_runs,
+        "wf_failed_runs": wf_failed_runs,
+        "wf_running_now": wf_running_now,
+        "wf_success_rate": round(wf_success_rate, 1),
     }
 
 
@@ -80,7 +98,8 @@ def get_run_history(
     """Get daily run counts grouped by status for the chart."""
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
-    rows = (
+    # Job runs
+    job_rows = (
         db.query(
             func.date(JobRun.created_at).label("date"),
             JobRun.status,
@@ -89,6 +108,19 @@ def get_run_history(
         .filter(JobRun.created_at >= cutoff)
         .group_by(func.date(JobRun.created_at), JobRun.status)
         .order_by(func.date(JobRun.created_at))
+        .all()
+    )
+
+    # Workflow runs
+    wf_rows = (
+        db.query(
+            func.date(WorkflowRun.created_at).label("date"),
+            WorkflowRun.status,
+            func.count(WorkflowRun.id).label("count"),
+        )
+        .filter(WorkflowRun.created_at >= cutoff)
+        .group_by(func.date(WorkflowRun.created_at), WorkflowRun.status)
+        .order_by(func.date(WorkflowRun.created_at))
         .all()
     )
 
@@ -101,9 +133,9 @@ def get_run_history(
         date_map[d] = {"date": d, "success": 0, "failed": 0, "cancelled": 0, "running": 0, "pending": 0}
         current += timedelta(days=1)
 
-    for row in rows:
+    for row in (*job_rows, *wf_rows):
         d = str(row.date)
         if d in date_map and row.status in date_map[d]:
-            date_map[d][row.status] = row.count
+            date_map[d][row.status] += row.count
 
     return list(date_map.values())

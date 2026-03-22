@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Search, Info, GripVertical } from 'lucide-react'
+import { Search, Info, GripVertical, Package } from 'lucide-react'
 import { modulesApi, type StepModule } from '../../../api/modules'
 import { NODE_TYPE_META } from './nodes/WorkflowNode'
 
@@ -13,6 +13,7 @@ const CATEGORIES = [
   { key: 'slack', label: 'Slack' },
   { key: 'email', label: 'Email' },
   { key: 'code', label: '코드' },
+  { key: 'report', label: '리포트' },
 ]
 
 const MIN_WIDTH = 200
@@ -90,11 +91,19 @@ export function ModuleSidebar({ onDragStart }: ModuleSidebarProps) {
     >
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Header */}
-        <div className="p-3 border-b border-border">
-          <h2 className="text-[11px] font-bold uppercase tracking-[0.15em] text-text-muted mb-3">
-            모듈 라이브러리
-          </h2>
+        {/* ── Top bar — h-12, aligned with center toolbar ── */}
+        <div className="h-12 flex items-center gap-2 px-4 border-b border-border flex-shrink-0">
+          <Package className="w-3.5 h-3.5 text-text-muted flex-shrink-0" />
+          <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-text-muted">
+            모듈
+          </span>
+          <span className="text-[10px] text-text-muted/60 tabular-nums ml-auto">
+            {filtered.length}
+          </span>
+        </div>
+
+        {/* Search */}
+        <div className="px-3 pt-3 pb-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted" />
             <input
@@ -108,7 +117,7 @@ export function ModuleSidebar({ onDragStart }: ModuleSidebarProps) {
         </div>
 
         {/* Category filter */}
-        <div className="px-3 py-2 flex gap-1 flex-wrap border-b border-border">
+        <div className="px-3 pb-2 flex gap-1 flex-wrap">
           {CATEGORIES.filter(
             (c) => c.key === 'all' || modules.some((m) => m.category === c.key)
           ).map((cat) => (
@@ -127,6 +136,9 @@ export function ModuleSidebar({ onDragStart }: ModuleSidebarProps) {
             </button>
           ))}
         </div>
+
+        {/* Divider */}
+        <div className="mx-3 border-t border-border" />
 
         {/* Module list */}
         <div className="flex-1 overflow-y-auto p-2 space-y-1">

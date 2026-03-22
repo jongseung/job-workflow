@@ -67,7 +67,7 @@ def get_recent_runs(
             .all()
         )
         for r in job_runs:
-            data = JobRunResponse.model_validate(r).model_dump()
+            data = JobRunResponse.model_validate(r).model_dump(mode="json")
             data["job_name"] = r.job.name if r.job else None
             data["run_type"] = "job"
             result.append(data)

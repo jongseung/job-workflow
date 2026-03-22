@@ -1,7 +1,7 @@
 import { memo } from 'react'
 import { Handle, Position } from '@xyflow/react'
 import type { NodeProps } from '@xyflow/react'
-import { Zap, Settings, Database, GitBranch, Merge, Code2 } from 'lucide-react'
+import { Zap, Settings, Database, GitBranch, Merge, Code2, FileText } from 'lucide-react'
 
 type LucideIcon = React.ComponentType<{ className?: string; size?: number; style?: React.CSSProperties }>
 
@@ -17,14 +17,15 @@ export const NODE_TYPE_META: Record<string, {
   transform: { color: '#00C48C', iconBg: '#00C48C', Icon: Code2,     label: 'Transform' },
   condition: { color: '#E056A0', iconBg: '#E056A0', Icon: GitBranch, label: 'Condition' },
   merge:     { color: '#9B8AFB', iconBg: '#9B8AFB', Icon: Merge,     label: 'Merge'     },
+  report:    { color: '#10B981', iconBg: '#10B981', Icon: FileText,  label: 'Report'    },
 }
 
-/* Obsidian theme tokens (matches project CSS vars) */
+/* Obsidian theme tokens — elevated card with soft transparency */
 const OBS = {
-  cardBg: 'rgba(17, 17, 19, 0.75)',
-  cardSolid: '#111113',
-  border: '#1f1f24',
-  borderLight: '#2a2a32',
+  cardBg: 'rgba(26, 26, 31, 0.82)',
+  cardSolid: '#1a1a1f',
+  border: '#2a2a32',
+  borderLight: '#35353f',
   primary: '#00d4ff',
 }
 
@@ -60,6 +61,7 @@ function getOutputFields(nodeData: WorkflowNodeData): string[] {
   if (etype === 'sql') return ['rows', 'count']
   if (etype === 'http') return ['result']
   if (etype === 'python') return ['result']
+  if (etype === 'html') return ['html', 'title']
   if (nodeData.moduleType === 'condition') return ['_branch']
   return []
 }
@@ -83,8 +85,8 @@ function WorkflowNodeComponent({ data, selected }: NodeProps) {
           transition-all duration-200 cursor-pointer
           ${statusStyle?.ring || ''}
           ${selected
-            ? `shadow-[0_0_0_1.5px_rgba(0,212,255,0.5),0_8px_40px_rgba(0,0,0,0.6)]`
-            : 'shadow-[0_2px_16px_rgba(0,0,0,0.5)] hover:shadow-[0_4px_28px_rgba(0,0,0,0.6)]'}
+            ? `shadow-[0_0_0_1.5px_rgba(0,212,255,0.5),0_8px_40px_rgba(0,0,0,0.7)]`
+            : 'shadow-[0_2px_20px_rgba(0,0,0,0.6),0_0_0_1px_rgba(255,255,255,0.03)] hover:shadow-[0_4px_32px_rgba(0,0,0,0.7),0_0_0_1px_rgba(255,255,255,0.06)]'}
         `}
         style={{
           background: OBS.cardBg,
@@ -215,4 +217,5 @@ export const nodeTypes = {
   transformNode: WorkflowNode,
   conditionNode: WorkflowNode,
   mergeNode: WorkflowNode,
+  reportNode: WorkflowNode,
 }

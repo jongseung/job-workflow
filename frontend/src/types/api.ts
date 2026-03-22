@@ -152,6 +152,14 @@ export interface SystemStats {
   scheduler_running: boolean;
   scheduled_jobs: number;
   uptime_seconds: number;
+  // Workflow stats
+  total_workflows: number;
+  active_workflows: number;
+  wf_total_runs: number;
+  wf_success_runs: number;
+  wf_failed_runs: number;
+  wf_running_now: number;
+  wf_success_rate: number;
 }
 
 export interface QueueStatus {

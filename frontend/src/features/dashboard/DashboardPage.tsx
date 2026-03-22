@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Activity, Briefcase, CheckCircle2, XCircle, PlayCircle, TrendingUp, Server, Database } from 'lucide-react';
+import { Activity, Briefcase, CheckCircle2, XCircle, PlayCircle, TrendingUp, Server, Database, GitMerge } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { Header } from '@/components/layout/Header';
 import { getStats, getRunHistory } from '@/api/system';
@@ -46,17 +46,24 @@ export function DashboardPage() {
     </div>
   );
 
-  const statCards = [
+  const jobCards = [
     { label: '전체 작업', value: stats?.total_jobs ?? 0, icon: Briefcase, color: 'text-primary', bg: 'bg-primary/8', glow: 'shadow-[0_0_20px_rgba(0,212,255,0.06)]' },
     { label: '현재 실행 중', value: stats?.running_now ?? 0, icon: PlayCircle, color: 'text-info', bg: 'bg-info/8', glow: 'shadow-[0_0_20px_rgba(56,189,248,0.06)]' },
-    { label: '성공률', value: `${stats?.success_rate ?? 0}%`, icon: TrendingUp, color: 'text-success', bg: 'bg-success/8', glow: 'shadow-[0_0_20px_rgba(16,185,129,0.06)]' },
-    { label: '실패한 실행', value: stats?.failed_runs ?? 0, icon: XCircle, color: 'text-danger', bg: 'bg-danger/8', glow: 'shadow-[0_0_20px_rgba(239,68,68,0.06)]' },
+    { label: '작업 성공률', value: `${stats?.success_rate ?? 0}%`, icon: TrendingUp, color: 'text-success', bg: 'bg-success/8', glow: 'shadow-[0_0_20px_rgba(16,185,129,0.06)]' },
+    { label: '작업 실패', value: stats?.failed_runs ?? 0, icon: XCircle, color: 'text-danger', bg: 'bg-danger/8', glow: 'shadow-[0_0_20px_rgba(239,68,68,0.06)]' },
+  ];
+
+  const wfCards = [
+    { label: '전체 워크플로우', value: stats?.total_workflows ?? 0, icon: GitMerge, color: 'text-[#9B8AFB]', bg: 'bg-[#9B8AFB]/8', glow: 'shadow-[0_0_20px_rgba(155,138,251,0.06)]' },
+    { label: 'WF 실행 중', value: stats?.wf_running_now ?? 0, icon: PlayCircle, color: 'text-info', bg: 'bg-info/8', glow: 'shadow-[0_0_20px_rgba(56,189,248,0.06)]' },
+    { label: 'WF 성공률', value: `${stats?.wf_success_rate ?? 0}%`, icon: TrendingUp, color: 'text-success', bg: 'bg-success/8', glow: 'shadow-[0_0_20px_rgba(16,185,129,0.06)]' },
+    { label: 'WF 실패', value: stats?.wf_failed_runs ?? 0, icon: XCircle, color: 'text-danger', bg: 'bg-danger/8', glow: 'shadow-[0_0_20px_rgba(239,68,68,0.06)]' },
   ];
 
   const pieData = [
-    { name: '성공', value: stats?.success_runs ?? 0, color: CHART_COLORS.success },
-    { name: '실패', value: stats?.failed_runs ?? 0, color: CHART_COLORS.failed },
-    { name: '실행 중', value: stats?.running_now ?? 0, color: CHART_COLORS.running },
+    { name: '성공', value: (stats?.success_runs ?? 0) + (stats?.wf_success_runs ?? 0), color: CHART_COLORS.success },
+    { name: '실패', value: (stats?.failed_runs ?? 0) + (stats?.wf_failed_runs ?? 0), color: CHART_COLORS.failed },
+    { name: '실행 중', value: (stats?.running_now ?? 0) + (stats?.wf_running_now ?? 0), color: CHART_COLORS.running },
   ].filter(d => d.value > 0);
 
   const CustomTooltip = ({ active, payload, label }: any) => {
@@ -77,19 +84,44 @@ export function DashboardPage() {
     <div>
       <Header title="Dashboard" />
       <div className="p-8 space-y-8">
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          {statCards.map((card, i) => (
-            <Card key={card.label} className={`group ${card.glow}`} style={{ animationDelay: `${i * 80}ms` }}>
-              <div className="flex items-center justify-between mb-5">
-                <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.12em]">{card.label}</span>
-                <div className={`w-11 h-11 rounded-xl ${card.bg} flex items-center justify-center transition-transform group-hover:scale-110`}>
-                  <card.icon className={`w-5 h-5 ${card.color}`} />
+        {/* Job Stats Cards */}
+        <div>
+          <h3 className="text-[11px] font-bold text-text-muted uppercase tracking-[0.12em] mb-4 flex items-center gap-2">
+            <Briefcase className="w-3.5 h-3.5" /> 작업 (Jobs)
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            {jobCards.map((card, i) => (
+              <Card key={card.label} className={`group ${card.glow}`} style={{ animationDelay: `${i * 80}ms` }}>
+                <div className="flex items-center justify-between mb-5">
+                  <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.12em]">{card.label}</span>
+                  <div className={`w-11 h-11 rounded-xl ${card.bg} flex items-center justify-center transition-transform group-hover:scale-110`}>
+                    <card.icon className={`w-5 h-5 ${card.color}`} />
+                  </div>
                 </div>
-              </div>
-              <p className="text-3xl font-extrabold text-text-primary tracking-tight">{card.value}</p>
-            </Card>
-          ))}
+                <p className="text-3xl font-extrabold text-text-primary tracking-tight">{card.value}</p>
+              </Card>
+            ))}
+          </div>
+        </div>
+
+        {/* Workflow Stats Cards */}
+        <div>
+          <h3 className="text-[11px] font-bold text-text-muted uppercase tracking-[0.12em] mb-4 flex items-center gap-2">
+            <GitMerge className="w-3.5 h-3.5" /> 워크플로우 (Workflows)
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            {wfCards.map((card, i) => (
+              <Card key={card.label} className={`group ${card.glow}`} style={{ animationDelay: `${(i + 4) * 80}ms` }}>
+                <div className="flex items-center justify-between mb-5">
+                  <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.12em]">{card.label}</span>
+                  <div className={`w-11 h-11 rounded-xl ${card.bg} flex items-center justify-center transition-transform group-hover:scale-110`}>
+                    <card.icon className={`w-5 h-5 ${card.color}`} />
+                  </div>
+                </div>
+                <p className="text-3xl font-extrabold text-text-primary tracking-tight">{card.value}</p>
+              </Card>
+            ))}
+          </div>
         </div>
 
         {/* Charts Row */}
@@ -145,9 +177,10 @@ export function DashboardPage() {
               {[
                 { icon: Server, label: '스케줄러', value: <StatusBadge status={stats?.scheduler_running ? 'running' : 'failed'} /> },
                 { icon: Briefcase, label: '예약된 작업', value: stats?.scheduled_jobs ?? 0 },
+                { icon: GitMerge, label: '활성 워크플로우', value: stats?.active_workflows ?? 0 },
                 { icon: Database, label: 'DB 크기', value: formatBytes(stats?.db_size_bytes ?? 0) },
                 { icon: Activity, label: '가동 시간', value: formatDuration((stats?.uptime_seconds ?? 0) * 1000) },
-                { icon: CheckCircle2, label: '총 실행', value: stats?.total_runs ?? 0 },
+                { icon: CheckCircle2, label: '총 실행 (잡+WF)', value: (stats?.total_runs ?? 0) + (stats?.wf_total_runs ?? 0) },
                 { icon: Briefcase, label: '활성 작업', value: stats?.active_jobs ?? 0 },
               ].map((item, i) => (
                 <div key={i} className="flex items-center justify-between py-3.5 first:pt-0 last:pb-0">
@@ -171,13 +204,14 @@ export function DashboardPage() {
               />
             </div>
             {runsLoading ? (
-              <TableSkeleton rows={5} cols={5} />
+              <TableSkeleton rows={5} cols={6} />
             ) : (
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <tr>
-                      <TableHead>작업</TableHead>
+                      <TableHead className="w-[50px] text-center">유형</TableHead>
+                      <TableHead>이름</TableHead>
                       <TableHead className="text-center whitespace-nowrap">상태</TableHead>
                       <TableHead className="text-center whitespace-nowrap">트리거</TableHead>
                       <TableHead className="text-center whitespace-nowrap">소요 시간</TableHead>
@@ -185,19 +219,41 @@ export function DashboardPage() {
                     </tr>
                   </TableHeader>
                   <TableBody>
-                    {recentRuns?.map((run) => (
-                      <TableRow key={run.id} className="cursor-pointer" onClick={() => navigate(`/jobs/${run.job_id}`)}>
-                        <TableCell className="font-semibold text-text-primary">{run.job_name || run.job_id.slice(0, 8)}</TableCell>
-                        <TableCell className="text-center">
-                          <div className="flex justify-center"><StatusBadge status={run.status} /></div>
-                        </TableCell>
-                        <TableCell className="text-xs text-text-secondary capitalize font-medium text-center whitespace-nowrap">{run.trigger_type}</TableCell>
-                        <TableCell className="text-text-secondary font-mono text-xs tabular-nums text-center whitespace-nowrap">{formatDuration(run.duration_ms)}</TableCell>
-                        <TableCell className="text-xs text-text-muted font-medium text-center whitespace-nowrap">{run.created_at ? timeAgo(run.created_at) : '-'}</TableCell>
-                      </TableRow>
-                    ))}
+                    {recentRuns?.map((run) => {
+                      const isWorkflow = run.run_type === 'workflow';
+                      const name = isWorkflow
+                        ? (run.workflow_name || run.workflow_id?.slice(0, 8) || '-')
+                        : (run.job_name || run.job_id?.slice(0, 8) || '-');
+                      const link = isWorkflow
+                        ? `/workflows/${run.workflow_id}/edit`
+                        : `/jobs/${run.job_id}`;
+                      return (
+                        <TableRow key={run.id} className="cursor-pointer" onClick={() => navigate(link)}>
+                          <TableCell className="text-center">
+                            {isWorkflow ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-[#9B8AFB]/10 text-[#9B8AFB]">
+                                <GitMerge className="w-3 h-3" />
+                                WF
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-primary/10 text-primary">
+                                <Briefcase className="w-3 h-3" />
+                                JOB
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell className="font-semibold text-text-primary">{name}</TableCell>
+                          <TableCell className="text-center">
+                            <div className="flex justify-center"><StatusBadge status={run.status} /></div>
+                          </TableCell>
+                          <TableCell className="text-xs text-text-secondary capitalize font-medium text-center whitespace-nowrap">{run.trigger_type}</TableCell>
+                          <TableCell className="text-text-secondary font-mono text-xs tabular-nums text-center whitespace-nowrap">{formatDuration(run.duration_ms)}</TableCell>
+                          <TableCell className="text-xs text-text-muted font-medium text-center whitespace-nowrap">{run.created_at ? timeAgo(run.created_at) : '-'}</TableCell>
+                        </TableRow>
+                      );
+                    })}
                     {(!recentRuns || recentRuns.length === 0) && (
-                      <tr><td colSpan={5} className="py-12 text-center text-sm text-text-muted font-medium">실행 기록 없음</td></tr>
+                      <tr><td colSpan={6} className="py-12 text-center text-sm text-text-muted font-medium">실행 기록 없음</td></tr>
                     )}
                   </TableBody>
                 </Table>
