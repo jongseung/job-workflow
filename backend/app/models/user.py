@@ -27,4 +27,4 @@ class User(Base):
         DateTime, nullable=True, onupdate=lambda: datetime.now(timezone.utc)
     )
 
-    jobs = relationship("Job", back_populates="creator", lazy="dynamic")
+    jobs = relationship("Job", foreign_keys="[Job.created_by]", back_populates="creator", lazy="dynamic")

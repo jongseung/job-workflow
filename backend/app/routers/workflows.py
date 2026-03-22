@@ -65,7 +65,7 @@ def update_workflow(
     current_user: User = Depends(get_current_user),
 ):
     updates = payload.model_dump(exclude_none=True)
-    wf = workflow_service.update_workflow(db, workflow_id, updates)
+    wf = workflow_service.update_workflow(db, workflow_id, updates, user_id=current_user.id)
 
     # Sync scheduler if schedule-related fields changed
     schedule_fields = {"schedule_type", "cron_expression", "interval_seconds", "is_active"}
@@ -113,7 +113,7 @@ def set_workflow_schedule(
         updates["cron_expression"] = None
         updates["interval_seconds"] = None
 
-    wf = workflow_service.update_workflow(db, workflow_id, updates)
+    wf = workflow_service.update_workflow(db, workflow_id, updates, user_id=current_user.id)
 
     # Register or unregister
     if wf.is_active and wf.schedule_type in ("cron", "interval"):

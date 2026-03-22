@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Header } from "@/components/layout/Header";
 import { getRecentRuns, getWorkflowRunLogs, type RecentRun, type RunType } from "@/api/runs";
@@ -15,10 +16,16 @@ const RUN_TYPE_TABS: { key: RunType; label: string }[] = [
 ];
 
 export function LogViewerPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab") as RunType | null;
+  const workflowIdParam = searchParams.get("workflowId");
+
   const [selectedRun, setSelectedRun] = useState<RecentRun | null>(null);
   const [streamFilter, setStreamFilter] = useState<string>("");
   const [searchText, setSearchText] = useState("");
-  const [runTypeFilter, setRunTypeFilter] = useState<RunType>("all");
+  const [runTypeFilter, setRunTypeFilter] = useState<RunType>(
+    tabParam && ["all", "job", "workflow"].includes(tabParam) ? tabParam : "all"
+  );
 
   const { data: runs } = useQuery({
     queryKey: ["recentRuns", 50, runTypeFilter],
@@ -44,6 +51,21 @@ export function LogViewerPage() {
     enabled: !!selectedRun && selectedRun.run_type === "workflow",
   });
 
+  // Auto-select first matching run when navigating from workflow card
+  useEffect(() => {
+    if (workflowIdParam && runs?.length && !selectedRun) {
+      const match = runs.find(
+        (r) => r.run_type === "workflow" && r.workflow_id === workflowIdParam
+      );
+      if (match) setSelectedRun(match);
+    }
+  }, [workflowIdParam, runs, selectedRun]);
+
+  // Filter displayed runs by workflowId when navigating from workflow card
+  const displayedRuns = workflowIdParam
+    ? runs?.filter((r) => r.run_type === "workflow" && r.workflow_id === workflowIdParam)
+    : runs;
+
   // Use the right log data based on run type
   const logData = selectedRun?.run_type === "workflow" ? wfLogData : jobLogData;
 
@@ -65,7 +87,18 @@ export function LogViewerPage() {
               <h3 className="text-[11px] font-bold text-text-muted uppercase tracking-[0.15em]">
                 최근 실행
               </h3>
-              <p className="text-xs text-text-muted mt-1 font-medium">{runs?.length ?? 0}개 항목</p>
+              <p className="text-xs text-text-muted mt-1 font-medium">
+                {displayedRuns?.length ?? 0}개 항목
+                {workflowIdParam && (
+                  <button
+                    type="button"
+                    onClick={() => { setSearchParams({}); setSelectedRun(null); }}
+                    className="ml-2 text-primary hover:text-primary/80 transition-colors"
+                  >
+                    전체 보기
+                  </button>
+                )}
+              </p>
             </div>
 
             {/* Run type tabs */}
@@ -88,7 +121,7 @@ export function LogViewerPage() {
             </div>
 
             <div className="flex-1 overflow-y-auto p-3 space-y-1">
-              {runs?.map((run) => (
+              {displayedRuns?.map((run) => (
                 <button
                   key={run.id}
                   onClick={() => setSelectedRun(run)}

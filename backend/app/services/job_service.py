@@ -76,7 +76,7 @@ def create_job(db: Session, data: JobCreate, user_id: str) -> Job:
     return job
 
 
-def update_job(db: Session, job_id: str, data: JobUpdate) -> Job:
+def update_job(db: Session, job_id: str, data: JobUpdate, user_id: str | None = None) -> Job:
     job = get_job(db, job_id)
     update_data = data.model_dump(exclude_unset=True)
 
@@ -89,6 +89,9 @@ def update_job(db: Session, job_id: str, data: JobUpdate) -> Job:
 
     for key, value in update_data.items():
         setattr(job, key, value)
+
+    if user_id:
+        job.updated_by = user_id
 
     db.commit()
     db.refresh(job)

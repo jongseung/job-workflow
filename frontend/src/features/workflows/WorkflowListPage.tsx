@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Play, Clock, Pencil, Trash2, GitMerge, X } from 'lucide-react'
+import { Plus, Search, Play, Clock, Pencil, Trash2, GitMerge, X, FileText } from 'lucide-react'
 import { Header } from '@/components/layout/Header'
 import { Button, Input, Card, TableSkeleton } from '@/components/ui'
 import { EmptyState } from '@/components/shared/EmptyState'
@@ -202,6 +202,7 @@ export function WorkflowListPage() {
                 onEdit={() => navigate(`/workflows/${wf.id}/edit`)}
                 onRun={() => runMut.mutate(wf.id)}
                 onSchedule={() => setSchedulingWf(wf)}
+                onLogs={() => navigate(`/logs?tab=workflow&workflowId=${wf.id}`)}
                 onDelete={() => {
                   if (window.confirm(`"${wf.name}" 워크플로우를 삭제하시겠습니까?`)) {
                     deleteMut.mutate(wf.id)
@@ -232,12 +233,14 @@ function WorkflowCard({
   onEdit,
   onRun,
   onSchedule,
+  onLogs,
   onDelete,
 }: {
   workflow: WorkflowOut
   onEdit: () => void
   onRun: () => void
   onSchedule: () => void
+  onLogs: () => void
   onDelete: () => void
 }) {
   const schedLabel = formatScheduleLabel(wf)
@@ -284,9 +287,15 @@ function WorkflowCard({
         className="flex items-center justify-between pt-3 border-t border-border-light"
         onClick={(e) => e.stopPropagation()}
       >
-        <span className="text-xs text-text-muted">
-          {relativeTime(wf.last_run_at || wf.updated_at || wf.created_at)}
-        </span>
+        <div className="flex flex-col">
+          <span className="text-xs text-text-muted">
+            {relativeTime(wf.last_run_at || wf.updated_at || wf.created_at)}
+          </span>
+          <span className="text-[10px] text-text-muted/50 mt-0.5">
+            {wf.created_by_name && <span>만든이: {wf.created_by_name}</span>}
+            {wf.updated_by_name && <span className="ml-1.5">수정: {wf.updated_by_name}</span>}
+          </span>
+        </div>
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
           <button
             type="button"
@@ -303,6 +312,14 @@ function WorkflowCard({
             className="w-7 h-7 flex items-center justify-center rounded-lg text-text-muted hover:text-primary hover:bg-primary/10 transition-all"
           >
             <Clock className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            title="로그"
+            onClick={onLogs}
+            className="w-7 h-7 flex items-center justify-center rounded-lg text-text-muted hover:text-amber-400 hover:bg-amber-400/10 transition-all"
+          >
+            <FileText className="w-3.5 h-3.5" />
           </button>
           <button
             type="button"

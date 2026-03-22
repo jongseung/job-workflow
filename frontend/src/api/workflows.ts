@@ -14,6 +14,9 @@ export interface WorkflowOut {
   webhook_token: string | null
   tags: string[] | null
   created_by: string | null
+  created_by_name: string | null
+  updated_by: string | null
+  updated_by_name: string | null
   created_at: string
   updated_at: string | null
   node_count: number

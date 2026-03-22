@@ -115,6 +115,10 @@ export function JobListPage() {
                           {job.description && (
                             <p className="text-xs text-text-muted mt-0.5 truncate max-w-xs font-medium">{job.description}</p>
                           )}
+                          <p className="text-[10px] text-text-muted/60 mt-0.5">
+                            {job.created_by_name && <span>만든이: {job.created_by_name}</span>}
+                            {job.updated_by_name && <span className="ml-2">수정: {job.updated_by_name}</span>}
+                          </p>
                         </div>
                       </TableCell>
                       <TableCell className="text-center">

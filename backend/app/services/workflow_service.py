@@ -37,7 +37,7 @@ def create_workflow(db: Session, data: dict, user_id: str | None = None) -> Work
     return wf
 
 
-def update_workflow(db: Session, workflow_id: str, data: dict) -> Workflow:
+def update_workflow(db: Session, workflow_id: str, data: dict, user_id: str | None = None) -> Workflow:
     wf = get_workflow(db, workflow_id)
     # Allow explicit None for nullable schedule/canvas fields
     nullable_keys = {"canvas_data", "description", "cron_expression", "interval_seconds", "tags"}
@@ -45,6 +45,8 @@ def update_workflow(db: Session, workflow_id: str, data: dict) -> Workflow:
         if val is not None or key in nullable_keys:
             setattr(wf, key, val)
     wf.updated_at = datetime.now(timezone.utc)
+    if user_id:
+        wf.updated_by = user_id
     db.commit()
     db.refresh(wf)
     return wf
@@ -85,6 +87,9 @@ def enrich_workflow_out(db: Session, wf: Workflow) -> dict:
         "webhook_token": wf.webhook_token,
         "tags": wf.tags,
         "created_by": wf.created_by,
+        "created_by_name": wf.creator.username if wf.creator else None,
+        "updated_by": wf.updated_by,
+        "updated_by_name": wf.updater.username if wf.updater else None,
         "created_at": wf.created_at,
         "updated_at": wf.updated_at,
         "node_count": node_count,

@@ -247,6 +247,37 @@ def get_workflow_next_run(workflow_id: str) -> str | None:
     return None
 
 
+# ─── Maintenance: auto-cleanup logs ──────────────────────────────────────────
+
+async def execute_log_cleanup():
+    """Scheduled task: delete old runs & logs (every 3 days)."""
+    from app.services.maintenance_service import MaintenanceService
+    maint = MaintenanceService()
+    result = await maint.cleanup_history()
+    logger.info(f"Scheduled log cleanup completed: {result}")
+
+
+def register_log_cleanup():
+    """Register a recurring log cleanup job that runs daily at 03:00."""
+    s = get_scheduler()
+    store_id = "system_log_cleanup"
+
+    try:
+        s.remove_job(store_id)
+    except Exception:
+        pass
+
+    # Run daily at 03:00 — cleanup_history uses 3-day retention
+    trigger = CronTrigger(hour=3, minute=0)
+    s.add_job(
+        execute_log_cleanup,
+        trigger=trigger,
+        id=store_id,
+        replace_existing=True,
+    )
+    logger.info("Registered system log cleanup job (daily 03:00, retention=3 days)")
+
+
 def get_scheduler_status() -> dict:
     """Get current scheduler status."""
     s = get_scheduler()

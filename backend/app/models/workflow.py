@@ -37,6 +37,7 @@ class Workflow(Base):
     tags: Mapped[list | None] = mapped_column(JSONB, nullable=True)
 
     created_by: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
+    updated_by: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
     )
@@ -45,6 +46,7 @@ class Workflow(Base):
     )
 
     creator = relationship("User", foreign_keys=[created_by])
+    updater = relationship("User", foreign_keys=[updated_by])
     runs = relationship("WorkflowRun", back_populates="workflow", cascade="all, delete-orphan", lazy="dynamic")
 
 

@@ -43,6 +43,9 @@ class WorkflowOut(BaseModel):
     webhook_token: str | None
     tags: list | None
     created_by: str | None
+    created_by_name: str | None = None
+    updated_by: str | None = None
+    updated_by_name: str | None = None
     created_at: datetime
     updated_at: datetime | None
     # computed

@@ -10,6 +10,7 @@ from app.services.auth_service import create_default_admin
 from app.scheduler.engine import (
     start_scheduler, shutdown_scheduler,
     sync_jobs_from_db, sync_workflows_from_db,
+    register_log_cleanup,
 )
 
 
@@ -54,10 +55,11 @@ async def lifespan(app: FastAPI):
         queue.start_processor(interval=settings.QUEUE_CHECK_INTERVAL)
     )
 
-    # APScheduler — jobs + workflows
+    # APScheduler — jobs + workflows + maintenance
     start_scheduler()
     sync_jobs_from_db()
     sync_workflows_from_db()
+    register_log_cleanup()
 
     yield
 

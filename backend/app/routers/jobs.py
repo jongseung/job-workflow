@@ -40,7 +40,10 @@ def list_jobs(
             "schedule_type": job.schedule_type,
             "is_active": job.is_active,
             "tags": job.tags_list,
+            "created_by_name": job.creator.username if job.creator else None,
+            "updated_by_name": job.updater.username if job.updater else None,
             "created_at": job.created_at.isoformat(),
+            "updated_at": job.updated_at.isoformat() if job.updated_at else None,
             "last_run_status": last_run.status if last_run else None,
             "last_run_at": last_run.started_at.isoformat() if last_run and last_run.started_at else None,
         })
@@ -103,7 +106,7 @@ def update_existing_job(
         result = dag.validate_dependencies(db, job_id, data.depends_on)
         if not result["valid"]:
             raise HTTPException(status_code=400, detail=result["error"])
-    job = update_job(db, job_id, data)
+    job = update_job(db, job_id, data, user_id=current_user.id)
     # Update scheduler
     if job.schedule_type != "manual" and job.is_active:
         register_job(job.id, job.schedule_type, job.cron_expression, job.interval_seconds)
@@ -311,6 +314,9 @@ def _job_to_response(job, db: Session) -> dict:
         "environment_vars": job.env_dict or None,
         "tags": job.tags_list or None,
         "created_by": job.created_by,
+        "created_by_name": job.creator.username if job.creator else None,
+        "updated_by": job.updated_by,
+        "updated_by_name": job.updater.username if job.updater else None,
         "datasource_id": job.datasource_id,
         "save_to_datasource": job.save_to_datasource,
         "target_table": job.target_table,

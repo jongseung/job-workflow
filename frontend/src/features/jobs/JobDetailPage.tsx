@@ -152,7 +152,10 @@ export function JobDetailPage() {
                   ['요구사항', job.requirements ? `${job.requirements.trim().split('\n').length}개 패키지` : '없음'],
                   ['상태', job.is_active ? '활성' : '비활성'],
                   ['웹훅', job.notify_webhook_url ? `${job.notify_on} → ${job.notify_webhook_url.slice(0, 40)}...` : '없음'],
+                  ['만든 사람', job.created_by_name || '—'],
                   ['생성일', formatDate(job.created_at)],
+                  ['수정한 사람', job.updated_by_name || '—'],
+                  ['수정일', job.updated_at ? formatDate(job.updated_at) : '—'],
                   ['마지막 실행', job.last_run_status || '없음'],
                 ].map(([label, value]) => (
                   <div key={label} className="flex justify-between items-center py-3.5 first:pt-0 last:pb-0">

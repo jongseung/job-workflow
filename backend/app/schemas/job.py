@@ -88,6 +88,9 @@ class JobResponse(BaseModel):
     max_concurrent: int = 1
     depends_on: list[str] | None = None
     created_by: str | None = None
+    created_by_name: str | None = None
+    updated_by: str | None = None
+    updated_by_name: str | None = None
     created_at: datetime
     updated_at: datetime | None = None
     last_run_status: str | None = None
@@ -104,7 +107,10 @@ class JobListResponse(BaseModel):
     schedule_type: str
     is_active: bool
     tags: list[str] | None = None
+    created_by_name: str | None = None
+    updated_by_name: str | None = None
     created_at: datetime
+    updated_at: datetime | None = None
     last_run_status: str | None = None
     last_run_at: datetime | None = None
 
