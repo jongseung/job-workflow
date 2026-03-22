@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { ArrowLeft, Clock, Save, Play, GitMerge, RefreshCw, Loader2, AlertTriangle } from 'lucide-react'
 import { WorkflowScheduleModal } from './components/WorkflowScheduleModal'
 import {
   ReactFlow,
@@ -47,7 +48,6 @@ function moduleToNodeData(mod: StepModule): WorkflowNodeData {
   }
 }
 
-// Convert ReactFlow nodes → canvas nodes for save
 function toCanvasNodes(nodes: Node[]): CanvasNode[] {
   return nodes.map((n) => ({
     id: n.id,
@@ -66,6 +66,20 @@ function toCanvasEdges(edges: Edge[]): CanvasEdge[] {
     targetHandle: e.targetHandle ?? null,
     data: (e.data as CanvasEdge['data']) || {},
   }))
+}
+
+function formatScheduleLabel(
+  scheduleType: string,
+  cronExpr: string | null,
+  intervalSecs: number | null
+): string {
+  if (scheduleType === 'cron' && cronExpr) return cronExpr
+  if (scheduleType === 'interval' && intervalSecs) {
+    if (intervalSecs < 60) return `${intervalSecs}s`
+    if (intervalSecs < 3600) return `${Math.round(intervalSecs / 60)}m`
+    return `${Math.round(intervalSecs / 3600)}h`
+  }
+  return '스케줄'
 }
 
 // ---------- inner component (needs ReactFlowProvider context) ----------
@@ -99,12 +113,9 @@ function EditorCanvas({
 
   // WebSocket for live execution updates
   const wsRef = useRef<WebSocket | null>(null)
-
-  // Keep a ref of latest nodes for WS handler
   const nodesRef = useRef(nodes)
   useEffect(() => { nodesRef.current = nodes }, [nodes])
 
-  // Connect WS on mount
   useEffect(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
     const ws = new WebSocket(`${protocol}://${window.location.hostname}:8000/ws/workflow/${workflowId}`)
@@ -129,7 +140,6 @@ function EditorCanvas({
           } else {
             addNotification({ type: 'error', message: `실행 실패: ${msg.error || '알 수 없는 오류'}` })
           }
-          // Clear execution highlights after 5s
           setTimeout(() => {
             setNodes((nds) =>
               nds.map((n) => ({ ...n, data: { ...n.data, executionStatus: undefined } }))
@@ -160,7 +170,6 @@ function EditorCanvas({
   // Run mutation
   const runMut = useMutation({
     mutationFn: async () => {
-      // Save first
       await workflowsApi.update(workflowId, {
         canvas_data: {
           nodes: toCanvasNodes(nodes),
@@ -181,7 +190,6 @@ function EditorCanvas({
 
   const onConnect: OnConnect = useCallback(
     (params: Connection) => {
-      // Determine branch label from source handle
       const branch = params.sourceHandle === 'true'
         ? 'true'
         : params.sourceHandle === 'false'
@@ -214,7 +222,6 @@ function EditorCanvas({
     setSelectedNode(null)
   }, [])
 
-  // Drag-and-drop from sidebar
   const onDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
@@ -251,7 +258,6 @@ function EditorCanvas({
           n.id === nodeId ? { ...n, data: { ...n.data, ...data } } : n
         )
       )
-      // Update selected node if same
       setSelectedNode((prev) =>
         prev && prev.id === nodeId ? { ...prev, data: { ...prev.data, ...data } } : prev
       )
@@ -268,43 +274,37 @@ function EditorCanvas({
     [setNodes, setEdges]
   )
 
+  const isScheduled = workflowData.schedule_type !== 'manual'
+
   return (
-    <div className="flex h-screen" style={{ background: '#080B12' }}>
+    <div className="flex h-screen bg-bg-primary">
       {/* Module Sidebar */}
       <ModuleSidebar onDragStart={setDragModule} />
 
       {/* Canvas */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Toolbar */}
-        <div
-          className="h-14 flex items-center justify-between px-4 border-b border-white/5 flex-shrink-0"
-          style={{ background: '#0D1117' }}
-        >
+        <div className="h-14 flex items-center justify-between px-4 border-b border-border bg-bg-card flex-shrink-0">
           {/* Left: back + name */}
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={() => navigate('/workflows')}
-              className="w-8 h-8 flex items-center justify-center rounded-lg text-white/30 hover:text-white/70 hover:bg-white/5 transition-all"
+              className="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-hover transition-all"
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                <path d="M19 12H5M12 19l-7-7 7-7" />
-              </svg>
+              <ArrowLeft className="w-4 h-4" />
             </button>
             <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-indigo-400/60" />
-              <span
-                className="text-[13px] font-semibold text-white/80"
-                style={{ fontFamily: "'Barlow', sans-serif" }}
-              >
+              <GitMerge className="w-3.5 h-3.5 text-primary" />
+              <span className="text-sm font-semibold text-text-primary">
                 {workflowName}
               </span>
             </div>
           </div>
 
-          {/* Center: node/edge count */}
+          {/* Center: counts */}
           <div className="flex items-center gap-4">
-            <span className="text-[11px]" style={{ color: '#484F58', fontFamily: "'Barlow', sans-serif" }}>
+            <span className="text-xs text-text-muted">
               {nodes.length} 노드 · {edges.length} 연결
             </span>
           </div>
@@ -315,84 +315,55 @@ function EditorCanvas({
             <button
               type="button"
               onClick={() => setShowSchedule(true)}
-              className="flex items-center gap-2 h-8 px-4 rounded-lg text-[12px] font-medium transition-all border"
-              style={{
-                background: workflowData.schedule_type !== 'manual'
-                  ? 'rgba(129,140,248,0.12)'
-                  : 'transparent',
-                borderColor: workflowData.schedule_type !== 'manual'
-                  ? 'rgba(129,140,248,0.35)'
-                  : 'rgba(255,255,255,0.08)',
-                color: workflowData.schedule_type !== 'manual' ? '#818CF8' : '#484F58',
-                fontFamily: "'Barlow', sans-serif",
-              }}
+              className={`flex items-center gap-2 h-8 px-3 rounded-lg text-[12px] font-medium transition-all border ${
+                isScheduled
+                  ? 'bg-primary/8 border-primary/30 text-primary'
+                  : 'border-border text-text-muted hover:text-text-secondary hover:border-border'
+              }`}
               title="스케줄 설정"
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                <circle cx="12" cy="12" r="10" />
-                <polyline points="12 6 12 12 16 14" />
-              </svg>
-              {workflowData.schedule_type === 'cron'
-                ? workflowData.cron_expression || 'Cron'
-                : workflowData.schedule_type === 'interval'
-                ? workflowData.interval_seconds
-                  ? `↻ ${workflowData.interval_seconds < 60
-                      ? `${workflowData.interval_seconds}s`
-                      : workflowData.interval_seconds < 3600
-                      ? `${Math.round(workflowData.interval_seconds / 60)}m`
-                      : `${Math.round(workflowData.interval_seconds / 3600)}h`}`
-                  : '인터벌'
+              {isScheduled ? (
+                <RefreshCw className="w-3.5 h-3.5" />
+              ) : (
+                <Clock className="w-3.5 h-3.5" />
+              )}
+              {isScheduled
+                ? formatScheduleLabel(
+                    workflowData.schedule_type,
+                    workflowData.cron_expression,
+                    workflowData.interval_seconds
+                  )
                 : '스케줄'}
             </button>
 
+            {/* Save button */}
             <button
               type="button"
               onClick={() => saveMut.mutate()}
               disabled={saving || saveMut.isPending}
-              className="flex items-center gap-2 h-8 px-4 rounded-lg text-[12px] font-medium transition-all border border-white/10 text-white/60 hover:text-white/90 hover:border-white/20 hover:bg-white/5 disabled:opacity-40"
-              style={{ fontFamily: "'Barlow', sans-serif" }}
+              className="flex items-center gap-2 h-8 px-3 rounded-lg text-[12px] font-medium border border-border text-text-muted hover:text-text-primary hover:border-border hover:bg-bg-hover transition-all disabled:opacity-40"
             >
               {saveMut.isPending ? (
-                <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
-                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={2} strokeDasharray="40" strokeLinecap="round" />
-                </svg>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : (
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-                  <polyline points="17 21 17 13 7 13 7 21" />
-                  <polyline points="7 3 7 8 15 8" />
-                </svg>
+                <Save className="w-3.5 h-3.5" />
               )}
               저장
             </button>
 
+            {/* Run button */}
             <button
               type="button"
               onClick={() => runMut.mutate()}
               disabled={running || runMut.isPending}
-              className="flex items-center gap-2 h-8 px-4 rounded-lg text-[12px] font-semibold transition-all disabled:opacity-40"
-              style={{
-                background: running ? 'rgba(16,185,129,0.15)' : 'rgba(16,185,129,0.2)',
-                border: '1px solid rgba(16,185,129,0.4)',
-                color: '#10B981',
-                fontFamily: "'Barlow', sans-serif",
-              }}
+              className="flex items-center gap-2 h-8 px-3 rounded-lg text-[12px] font-semibold border border-success/40 bg-success/10 text-success hover:bg-success/20 transition-all disabled:opacity-40"
             >
               {running ? (
-                <>
-                  <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
-                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={2} strokeDasharray="40" strokeLinecap="round" />
-                  </svg>
-                  실행 중...
-                </>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : (
-                <>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                    <polygon points="5 3 19 12 5 21 5 3" />
-                  </svg>
-                  실행
-                </>
+                <Play className="w-3.5 h-3.5" />
               )}
+              {running ? '실행 중...' : '실행'}
             </button>
           </div>
         </div>
@@ -423,7 +394,7 @@ function EditorCanvas({
               color="rgba(255,255,255,0.04)"
             />
             <Controls
-              className="!bg-[#0D1117] !border !border-white/10 !rounded-xl overflow-hidden"
+              className="!bg-bg-card !border !border-border !rounded-xl overflow-hidden"
               style={{ boxShadow: 'none' }}
             />
             <MiniMap
@@ -435,7 +406,7 @@ function EditorCanvas({
                 }
                 return colors[d?.moduleType] || '#F59E0B'
               }}
-              className="!bg-[#0D1117] !border !border-white/10 !rounded-xl"
+              className="!bg-bg-card !border !border-border !rounded-xl"
               maskColor="rgba(8,11,18,0.85)"
             />
 
@@ -443,8 +414,8 @@ function EditorCanvas({
             {nodes.length === 0 && (
               <Panel position="top-center" style={{ marginTop: '40%' }}>
                 <div className="text-center pointer-events-none">
-                  <div className="text-5xl mb-4 opacity-10">⬡</div>
-                  <p className="text-[13px] opacity-20" style={{ color: '#848D97', fontFamily: "'Barlow', sans-serif" }}>
+                  <GitMerge className="w-12 h-12 text-text-muted opacity-10 mx-auto mb-3" />
+                  <p className="text-[13px] text-text-muted opacity-20">
                     왼쪽에서 모듈을 드래그하여 캔버스에 추가하세요
                   </p>
                 </div>
@@ -489,12 +460,10 @@ export function WorkflowEditorPage() {
 
   if (isLoading) {
     return (
-      <div className="h-screen flex items-center justify-center" style={{ background: '#080B12' }}>
-        <div className="flex flex-col items-center gap-4">
-          <svg className="animate-spin w-8 h-8" viewBox="0 0 24 24" fill="none" style={{ color: '#818CF8' }}>
-            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={2} strokeDasharray="40" strokeLinecap="round" />
-          </svg>
-          <p className="text-[13px]" style={{ color: '#484F58', fontFamily: "'Barlow', sans-serif" }}>워크플로우 로딩 중...</p>
+      <div className="h-screen flex items-center justify-center bg-bg-primary">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 text-primary animate-spin" />
+          <p className="text-sm text-text-muted">워크플로우 로딩 중...</p>
         </div>
       </div>
     )
@@ -502,15 +471,14 @@ export function WorkflowEditorPage() {
 
   if (isError || !workflow) {
     return (
-      <div className="h-screen flex items-center justify-center" style={{ background: '#080B12' }}>
+      <div className="h-screen flex items-center justify-center bg-bg-primary">
         <div className="text-center">
-          <div className="text-4xl mb-4">⚠</div>
-          <p className="text-white/40 mb-4" style={{ fontFamily: "'Barlow', sans-serif" }}>워크플로우를 불러올 수 없습니다</p>
+          <AlertTriangle className="w-12 h-12 text-warning mx-auto mb-4 opacity-60" />
+          <p className="text-text-muted mb-4">워크플로우를 불러올 수 없습니다</p>
           <button
             type="button"
             onClick={() => navigate('/workflows')}
-            className="px-4 py-2 rounded-lg text-[12px] text-white/60 border border-white/10 hover:bg-white/5 transition-all"
-            style={{ fontFamily: "'Barlow', sans-serif" }}
+            className="px-4 py-2 rounded-lg text-sm text-text-secondary border border-border hover:bg-bg-hover transition-all"
           >
             목록으로 돌아가기
           </button>
@@ -519,37 +487,37 @@ export function WorkflowEditorPage() {
     )
   }
 
-  // Build ReactFlow node/edge arrays from canvas_data
-  const rawNodes: Node[] = (workflow.canvas_data?.nodes || []).map((n: CanvasNode) => ({
+  const initialNodes: Node[] = (workflow.canvas_data?.nodes || []).map((n) => ({
     id: n.id,
     type: n.type || 'workflowNode',
     position: n.position,
     data: n.data,
   }))
 
-  const rawEdges: Edge[] = (workflow.canvas_data?.edges || []).map((e: CanvasEdge) => {
-    const branch = e.data?.branch
-    return {
-      id: e.id,
-      source: e.source,
-      target: e.target,
-      sourceHandle: e.sourceHandle ?? undefined,
-      targetHandle: e.targetHandle ?? undefined,
-      animated: false,
-      style: {
-        stroke: branch === 'true' ? '#10B981' : branch === 'false' ? '#EF4444' : '#334155',
-        strokeWidth: 2,
-      },
-      data: e.data || {},
-    }
-  })
+  const initialEdges: Edge[] = (workflow.canvas_data?.edges || []).map((e) => ({
+    id: e.id,
+    source: e.source,
+    target: e.target,
+    sourceHandle: e.sourceHandle ?? undefined,
+    targetHandle: e.targetHandle ?? undefined,
+    animated: false,
+    style: {
+      stroke: e.data?.branch === 'true'
+        ? '#10B981'
+        : e.data?.branch === 'false'
+        ? '#EF4444'
+        : '#334155',
+      strokeWidth: 2,
+    },
+    data: e.data || {},
+  }))
 
   return (
     <ReactFlowProvider>
       <EditorCanvas
         workflowId={workflow.id}
-        initialNodes={rawNodes}
-        initialEdges={rawEdges}
+        initialNodes={initialNodes}
+        initialEdges={initialEdges}
         workflowName={workflow.name}
         workflowData={workflow}
       />

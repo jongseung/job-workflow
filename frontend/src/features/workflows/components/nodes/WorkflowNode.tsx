@@ -1,20 +1,23 @@
 import { memo } from 'react'
 import { Handle, Position } from '@xyflow/react'
 import type { NodeProps } from '@xyflow/react'
+import { Zap, Settings, Database, RefreshCw, GitBranch, Merge } from 'lucide-react'
+
+type LucideIcon = React.ComponentType<{ className?: string; size?: number; style?: React.CSSProperties }>
 
 export const NODE_TYPE_META: Record<string, {
   color: string
   bg: string
   border: string
-  icon: string
+  Icon: LucideIcon
   label: string
 }> = {
-  trigger:   { color: '#22D3EE', bg: 'rgba(34,211,238,0.06)',   border: 'rgba(34,211,238,0.35)',  icon: '⚡', label: 'Trigger'   },
-  action:    { color: '#F59E0B', bg: 'rgba(245,158,11,0.06)',   border: 'rgba(245,158,11,0.35)',  icon: '⚙', label: 'Action'    },
-  data:      { color: '#818CF8', bg: 'rgba(129,140,248,0.06)',  border: 'rgba(129,140,248,0.35)', icon: '🗃', label: 'Data'      },
-  transform: { color: '#10B981', bg: 'rgba(16,185,129,0.06)',   border: 'rgba(16,185,129,0.35)',  icon: '⟳', label: 'Transform' },
-  condition: { color: '#F472B6', bg: 'rgba(244,114,182,0.06)',  border: 'rgba(244,114,182,0.35)', icon: '◇', label: 'Condition' },
-  merge:     { color: '#A78BFA', bg: 'rgba(167,139,250,0.06)',  border: 'rgba(167,139,250,0.35)', icon: '⊕', label: 'Merge'     },
+  trigger:   { color: '#22D3EE', bg: 'rgba(34,211,238,0.06)',   border: 'rgba(34,211,238,0.35)',  Icon: Zap,       label: 'Trigger'   },
+  action:    { color: '#F59E0B', bg: 'rgba(245,158,11,0.06)',   border: 'rgba(245,158,11,0.35)',  Icon: Settings,  label: 'Action'    },
+  data:      { color: '#818CF8', bg: 'rgba(129,140,248,0.06)',  border: 'rgba(129,140,248,0.35)', Icon: Database,  label: 'Data'      },
+  transform: { color: '#10B981', bg: 'rgba(16,185,129,0.06)',   border: 'rgba(16,185,129,0.35)',  Icon: RefreshCw, label: 'Transform' },
+  condition: { color: '#F472B6', bg: 'rgba(244,114,182,0.06)',  border: 'rgba(244,114,182,0.35)', Icon: GitBranch, label: 'Condition' },
+  merge:     { color: '#A78BFA', bg: 'rgba(167,139,250,0.06)',  border: 'rgba(167,139,250,0.35)', Icon: Merge,     label: 'Merge'     },
 }
 
 const STATUS_RING: Record<string, string> = {
@@ -40,8 +43,7 @@ export interface WorkflowNodeData {
 function WorkflowNodeComponent({ data, selected }: NodeProps) {
   const nodeData = data as WorkflowNodeData
   const meta = NODE_TYPE_META[nodeData.moduleType] || NODE_TYPE_META.action
-  const icon = nodeData.icon || meta.icon
-  const color = nodeData.color || meta.color
+  const { Icon, color } = meta
   const execStatus = nodeData.executionStatus
   const isCondition = nodeData.moduleType === 'condition'
   const isTrigger = nodeData.moduleType === 'trigger'
@@ -70,18 +72,15 @@ function WorkflowNodeComponent({ data, selected }: NodeProps) {
 
       {/* Header */}
       <div className="flex items-center gap-2 px-3 pt-3 pb-2 pl-5">
-        <span className="text-base leading-none select-none" role="img">{icon}</span>
+        <Icon size={15} style={{ color, flexShrink: 0 }} />
         <div className="flex-1 min-w-0">
           <div
             className="text-[11px] font-semibold uppercase tracking-wider mb-0.5"
-            style={{ color, fontFamily: "'Barlow Condensed', sans-serif" }}
+            style={{ color }}
           >
             {meta.label}
           </div>
-          <div
-            className="text-[13px] font-medium text-white/90 truncate leading-tight"
-            style={{ fontFamily: "'Barlow', sans-serif" }}
-          >
+          <div className="text-[13px] font-medium text-white/90 truncate leading-tight">
             {nodeData.label}
           </div>
         </div>
@@ -103,11 +102,7 @@ function WorkflowNodeComponent({ data, selected }: NodeProps) {
         <div className="px-5 pb-2">
           <span
             className="inline-block text-[10px] px-1.5 py-0.5 rounded-full"
-            style={{
-              background: `${color}20`,
-              color,
-              fontFamily: "'Barlow', sans-serif",
-            }}
+            style={{ background: `${color}20`, color }}
           >
             {nodeData.category}
           </span>
@@ -143,16 +138,15 @@ function WorkflowNodeComponent({ data, selected }: NodeProps) {
             position={Position.Right}
             style={{ top: '65%', right: -7, background: '#EF4444', borderColor: '#EF4444', width: 12, height: 12, border: '2px solid #EF4444' }}
           />
-          {/* Labels */}
           <div
             className="absolute text-[9px] font-bold"
-            style={{ right: -28, top: 'calc(35% - 6px)', color: '#10B981', fontFamily: "'Barlow', sans-serif" }}
+            style={{ right: -28, top: 'calc(35% - 6px)', color: '#10B981' }}
           >
             T
           </div>
           <div
             className="absolute text-[9px] font-bold"
-            style={{ right: -26, top: 'calc(65% - 6px)', color: '#EF4444', fontFamily: "'Barlow', sans-serif" }}
+            style={{ right: -26, top: 'calc(65% - 6px)', color: '#EF4444' }}
           >
             F
           </div>
@@ -176,7 +170,6 @@ function WorkflowNodeComponent({ data, selected }: NodeProps) {
 export const WorkflowNode = memo(WorkflowNodeComponent)
 WorkflowNode.displayName = 'WorkflowNode'
 
-// Register all node types mapping to WorkflowNode
 export const nodeTypes = {
   workflowNode: WorkflowNode,
   triggerNode: WorkflowNode,

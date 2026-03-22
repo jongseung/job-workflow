@@ -1,11 +1,11 @@
 /**
  * WorkflowScheduleModal
- *
  * Schedule panel for a workflow — supports Manual / Cron / Interval modes.
- * Opens as a slide-over panel from the WorkflowEditorPage toolbar.
  */
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { X, Clock, Play, Calendar, RefreshCw, Info } from 'lucide-react'
+import { Button, Input } from '@/components/ui'
 import { workflowsApi, type WorkflowOut } from '../../../api/workflows'
 import { useUIStore } from '../../../stores/uiStore'
 
@@ -14,7 +14,6 @@ interface Props {
   onClose: () => void
 }
 
-// Common cron presets
 const CRON_PRESETS = [
   { label: '매분',        value: '* * * * *'    },
   { label: '매시간',      value: '0 * * * *'    },
@@ -24,7 +23,6 @@ const CRON_PRESETS = [
   { label: '매월 1일',   value: '0 0 1 * *'     },
 ]
 
-// Interval presets in seconds
 const INTERVAL_PRESETS = [
   { label: '30초',  value: 30     },
   { label: '1분',   value: 60     },
@@ -69,7 +67,6 @@ export function WorkflowScheduleModal({ workflow, onClose }: Props) {
   const [customInterval, setCustomInterval] = useState(false)
   const [isActive, setIsActive] = useState(workflow.is_active)
 
-  // Fetch live next_run_at
   const { data: scheduleInfo, refetch: refetchSchedule } = useQuery({
     queryKey: ['workflow-schedule', workflow.id],
     queryFn: () => workflowsApi.getSchedule(workflow.id).then((r) => r.data),
@@ -95,40 +92,29 @@ export function WorkflowScheduleModal({ workflow, onClose }: Props) {
 
   const nextRun = scheduleInfo?.next_run_at || workflow.next_run_at
 
+  const SCHEDULE_TYPES = [
+    { key: 'manual' as const,   Icon: Play,       label: '수동',    desc: '직접 실행'   },
+    { key: 'cron' as const,     Icon: Calendar,   label: 'Cron',    desc: 'Cron 표현식' },
+    { key: 'interval' as const, Icon: RefreshCw,  label: '인터벌',  desc: '주기적 반복' },
+  ]
+
   return (
-    /* Backdrop */
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)' }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div
-        className="w-[480px] rounded-2xl border border-white/10 overflow-hidden"
-        style={{ background: '#0D1117' }}
-      >
+      <div className="w-[480px] bg-bg-card border border-border rounded-2xl overflow-hidden">
         {/* Header */}
-        <div
-          className="flex items-center justify-between px-5 py-4 border-b border-white/5"
-          style={{ background: 'rgba(129,140,248,0.06)' }}
-        >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <div className="flex items-center gap-2.5">
-            <div
-              className="w-7 h-7 rounded-lg flex items-center justify-center text-sm"
-              style={{ background: 'rgba(129,140,248,0.15)', border: '1px solid rgba(129,140,248,0.3)' }}
-            >
-              ⏱
+            <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
+              <Clock className="w-4 h-4 text-primary" />
             </div>
             <div>
-              <div
-                className="text-[11px] font-bold uppercase tracking-wider"
-                style={{ color: '#818CF8', fontFamily: "'Barlow Condensed', sans-serif" }}
-              >
+              <div className="text-xs font-bold uppercase tracking-wider text-text-muted">
                 워크플로우 스케줄
               </div>
-              <div
-                className="text-[13px] font-semibold text-white/80"
-                style={{ fontFamily: "'Barlow', sans-serif" }}
-              >
+              <div className="text-sm font-semibold text-text-primary">
                 {workflow.name}
               </div>
             </div>
@@ -136,47 +122,35 @@ export function WorkflowScheduleModal({ workflow, onClose }: Props) {
           <button
             type="button"
             onClick={onClose}
-            className="w-7 h-7 flex items-center justify-center rounded-lg text-white/30 hover:text-white/70 hover:bg-white/5 transition-all"
+            className="w-7 h-7 flex items-center justify-center rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-hover transition-all"
           >
-            ×
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         <div className="p-5 space-y-5">
           {/* Schedule type selector */}
           <div>
-            <Label>실행 유형</Label>
-            <div className="flex gap-2 mt-2">
-              {([
-                { key: 'manual',   icon: '▶',  label: '수동',      desc: '직접 실행'        },
-                { key: 'cron',     icon: '⏰', label: 'Cron',      desc: 'Cron 표현식'      },
-                { key: 'interval', icon: '↻',  label: '인터벌',    desc: '주기적 반복'      },
-              ] as const).map(({ key, icon, label, desc }) => {
-                const isActive = scheduleType === key
+            <label className="block text-xs font-bold uppercase tracking-wider text-text-muted mb-2">
+              실행 유형
+            </label>
+            <div className="flex gap-2">
+              {SCHEDULE_TYPES.map(({ key, Icon, label, desc }) => {
+                const active = scheduleType === key
                 return (
                   <button
                     key={key}
                     type="button"
                     onClick={() => setScheduleType(key)}
-                    className="flex-1 flex flex-col items-center gap-1 py-3 rounded-xl transition-all border"
-                    style={{
-                      background: isActive ? 'rgba(129,140,248,0.12)' : 'rgba(255,255,255,0.03)',
-                      borderColor: isActive ? 'rgba(129,140,248,0.4)' : 'rgba(255,255,255,0.06)',
-                    }}
+                    className={`flex-1 flex flex-col items-center gap-1.5 py-3 rounded-xl border transition-all ${
+                      active
+                        ? 'bg-primary/8 border-primary/30 text-primary'
+                        : 'bg-bg-tertiary border-border text-text-muted hover:border-border hover:text-text-secondary'
+                    }`}
                   >
-                    <span className="text-lg">{icon}</span>
-                    <span
-                      className="text-[12px] font-semibold"
-                      style={{ color: isActive ? '#818CF8' : '#848D97', fontFamily: "'Barlow', sans-serif" }}
-                    >
-                      {label}
-                    </span>
-                    <span
-                      className="text-[10px]"
-                      style={{ color: '#484F58', fontFamily: "'Barlow', sans-serif" }}
-                    >
-                      {desc}
-                    </span>
+                    <Icon className="w-4 h-4" />
+                    <span className="text-[12px] font-semibold">{label}</span>
+                    <span className="text-[10px] text-text-muted">{desc}</span>
                   </button>
                 )
               })}
@@ -186,22 +160,19 @@ export function WorkflowScheduleModal({ workflow, onClose }: Props) {
           {/* Cron settings */}
           {scheduleType === 'cron' && (
             <div className="space-y-3">
-              <Label>Cron 표현식</Label>
-              <input
+              <label className="block text-xs font-bold uppercase tracking-wider text-text-muted">
+                Cron 표현식
+              </label>
+              <Input
                 type="text"
                 value={cronExpr}
                 onChange={(e) => setCronExpr(e.target.value)}
                 placeholder="분 시 일 월 요일"
-                className="w-full rounded-xl px-3 py-2.5 text-[13px] outline-none border border-white/8 focus:border-indigo-400/40 transition-colors"
-                style={{
-                  background: 'rgba(255,255,255,0.04)',
-                  color: '#E6EDF3',
-                  fontFamily: "'JetBrains Mono', monospace",
-                }}
+                className="font-mono"
               />
               {/* Presets */}
               <div>
-                <span className="text-[10px] uppercase tracking-widest mb-1.5 block" style={{ color: '#484F58', fontFamily: "'Barlow Condensed', sans-serif" }}>
+                <span className="block text-[10px] uppercase tracking-wider text-text-muted mb-1.5">
                   프리셋
                 </span>
                 <div className="flex flex-wrap gap-1.5">
@@ -210,27 +181,25 @@ export function WorkflowScheduleModal({ workflow, onClose }: Props) {
                       key={p.value}
                       type="button"
                       onClick={() => setCronExpr(p.value)}
-                      className="px-2.5 py-1 rounded-lg text-[11px] transition-all border"
-                      style={{
-                        background: cronExpr === p.value ? 'rgba(129,140,248,0.15)' : 'rgba(255,255,255,0.03)',
-                        borderColor: cronExpr === p.value ? 'rgba(129,140,248,0.4)' : 'rgba(255,255,255,0.06)',
-                        color: cronExpr === p.value ? '#818CF8' : '#848D97',
-                        fontFamily: "'Barlow', sans-serif",
-                      }}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] border transition-all ${
+                        cronExpr === p.value
+                          ? 'bg-primary/8 border-primary/30 text-primary'
+                          : 'bg-bg-tertiary border-border text-text-muted hover:text-text-secondary'
+                      }`}
                     >
                       {p.label}
                     </button>
                   ))}
                 </div>
               </div>
-              <div className="flex items-start gap-2 p-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                <span className="text-[13px]">💡</span>
+              <div className="flex items-start gap-2 p-3 rounded-xl bg-bg-tertiary border border-border">
+                <Info className="w-3.5 h-3.5 text-text-muted mt-0.5 flex-shrink-0" />
                 <div>
-                  <p className="text-[10px]" style={{ color: '#484F58', fontFamily: "'Barlow', sans-serif" }}>
-                    형식: <code style={{ color: '#818CF8', fontFamily: "'JetBrains Mono', monospace" }}>분(0-59) 시(0-23) 일(1-31) 월(1-12) 요일(0-7)</code>
+                  <p className="text-[10px] text-text-muted">
+                    형식: <code className="font-mono text-primary">분(0-59) 시(0-23) 일(1-31) 월(1-12) 요일(0-7)</code>
                   </p>
-                  <p className="text-[10px] mt-0.5" style={{ color: '#484F58', fontFamily: "'Barlow', sans-serif" }}>
-                    현재: <code style={{ color: '#22D3EE', fontFamily: "'JetBrains Mono', monospace" }}>{cronExpr}</code>
+                  <p className="text-[10px] text-text-muted mt-0.5">
+                    현재: <code className="font-mono text-info">{cronExpr}</code>
                   </p>
                 </div>
               </div>
@@ -240,38 +209,34 @@ export function WorkflowScheduleModal({ workflow, onClose }: Props) {
           {/* Interval settings */}
           {scheduleType === 'interval' && (
             <div className="space-y-3">
-              <Label>실행 주기</Label>
-              {/* Preset buttons */}
+              <label className="block text-xs font-bold uppercase tracking-wider text-text-muted">
+                실행 주기
+              </label>
               <div className="grid grid-cols-4 gap-1.5">
                 {INTERVAL_PRESETS.map((p) => (
                   <button
                     key={p.value}
                     type="button"
                     onClick={() => { setIntervalSecs(p.value); setCustomInterval(false) }}
-                    className="py-2 rounded-xl text-[11px] font-medium transition-all border"
-                    style={{
-                      background: !customInterval && intervalSecs === p.value ? 'rgba(129,140,248,0.15)' : 'rgba(255,255,255,0.03)',
-                      borderColor: !customInterval && intervalSecs === p.value ? 'rgba(129,140,248,0.4)' : 'rgba(255,255,255,0.06)',
-                      color: !customInterval && intervalSecs === p.value ? '#818CF8' : '#848D97',
-                      fontFamily: "'Barlow', sans-serif",
-                    }}
+                    className={`py-2 rounded-xl text-[11px] font-medium border transition-all ${
+                      !customInterval && intervalSecs === p.value
+                        ? 'bg-primary/8 border-primary/30 text-primary'
+                        : 'bg-bg-tertiary border-border text-text-muted hover:text-text-secondary'
+                    }`}
                   >
                     {p.label}
                   </button>
                 ))}
               </div>
-              {/* Custom input */}
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setCustomInterval(!customInterval)}
-                  className="px-3 py-1.5 rounded-lg text-[11px] transition-all border"
-                  style={{
-                    background: customInterval ? 'rgba(129,140,248,0.15)' : 'rgba(255,255,255,0.03)',
-                    borderColor: customInterval ? 'rgba(129,140,248,0.4)' : 'rgba(255,255,255,0.06)',
-                    color: customInterval ? '#818CF8' : '#484F58',
-                    fontFamily: "'Barlow', sans-serif",
-                  }}
+                  className={`px-3 py-1.5 rounded-lg text-[11px] border transition-all ${
+                    customInterval
+                      ? 'bg-primary/8 border-primary/30 text-primary'
+                      : 'bg-bg-tertiary border-border text-text-muted hover:text-text-secondary'
+                  }`}
                 >
                   직접 입력
                 </button>
@@ -282,27 +247,26 @@ export function WorkflowScheduleModal({ workflow, onClose }: Props) {
                       value={intervalSecs}
                       onChange={(e) => setIntervalSecs(Math.max(10, Number(e.target.value)))}
                       min={10}
-                      className="flex-1 rounded-lg px-3 py-1.5 text-[12px] outline-none border border-white/8 focus:border-indigo-400/40 transition-colors"
-                      style={{ background: 'rgba(255,255,255,0.04)', color: '#E6EDF3', fontFamily: "'JetBrains Mono', monospace" }}
+                      className="flex-1 bg-bg-tertiary rounded-lg px-3 py-1.5 text-[12px] text-text-primary outline-none border border-border focus:border-primary/50 transition-colors font-mono"
                     />
-                    <span className="text-[11px]" style={{ color: '#484F58', fontFamily: "'Barlow', sans-serif" }}>초</span>
+                    <span className="text-[11px] text-text-muted">초</span>
                   </div>
                 )}
               </div>
-              <p className="text-[11px]" style={{ color: '#484F58', fontFamily: "'Barlow', sans-serif" }}>
-                선택된 주기: <span style={{ color: '#818CF8' }}>{secondsToHuman(intervalSecs)}</span>마다 실행
+              <p className="text-[11px] text-text-muted">
+                선택된 주기: <span className="text-primary">{secondsToHuman(intervalSecs)}</span>마다 실행
               </p>
             </div>
           )}
 
           {/* Active toggle */}
-          <div className="flex items-center justify-between py-3 px-4 rounded-xl border border-white/5" style={{ background: 'rgba(255,255,255,0.02)' }}>
+          <div className="flex items-center justify-between py-3 px-4 rounded-xl bg-bg-tertiary border border-border">
             <div>
-              <div className="text-[12px] font-semibold text-white/70" style={{ fontFamily: "'Barlow', sans-serif" }}>
-                스케줄 활성화
-              </div>
-              <div className="text-[10px]" style={{ color: '#484F58', fontFamily: "'Barlow', sans-serif" }}>
-                {scheduleType === 'manual' ? '수동 모드에서는 영향 없음' : isActive ? '스케줄이 실행됩니다' : '스케줄이 일시 중지됩니다'}
+              <div className="text-sm font-semibold text-text-secondary">스케줄 활성화</div>
+              <div className="text-xs text-text-muted mt-0.5">
+                {scheduleType === 'manual'
+                  ? '수동 모드에서는 영향 없음'
+                  : isActive ? '스케줄이 실행됩니다' : '스케줄이 일시 중지됩니다'}
               </div>
             </div>
             <button
@@ -310,16 +274,15 @@ export function WorkflowScheduleModal({ workflow, onClose }: Props) {
               onClick={() => setIsActive(!isActive)}
               className="relative w-11 h-6 rounded-full transition-all flex-shrink-0"
               style={{
-                background: isActive ? 'rgba(16,185,129,0.5)' : 'rgba(255,255,255,0.1)',
+                background: isActive ? 'rgba(16,185,129,0.4)' : 'rgba(255,255,255,0.08)',
                 border: isActive ? '1px solid rgba(16,185,129,0.6)' : '1px solid rgba(255,255,255,0.1)',
               }}
             >
               <span
-                className="absolute top-0.5 w-5 h-5 rounded-full transition-all duration-200 shadow"
+                className="absolute top-0.5 w-5 h-5 rounded-full transition-all duration-200"
                 style={{
-                  background: isActive ? '#10B981' : '#484F58',
+                  background: isActive ? '#10B981' : '#6B7280',
                   left: isActive ? 'calc(100% - 22px)' : '2px',
-                  boxShadow: isActive ? '0 0 8px rgba(16,185,129,0.5)' : 'none',
                 }}
               />
             </button>
@@ -327,25 +290,19 @@ export function WorkflowScheduleModal({ workflow, onClose }: Props) {
 
           {/* Next run display */}
           {scheduleType !== 'manual' && (
-            <div
-              className="flex items-center gap-3 py-3 px-4 rounded-xl border"
-              style={{
-                background: 'rgba(129,140,248,0.05)',
-                borderColor: 'rgba(129,140,248,0.15)',
-              }}
-            >
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-base" style={{ background: 'rgba(129,140,248,0.12)' }}>
-                ⏱
+            <div className="flex items-center gap-3 py-3 px-4 rounded-xl bg-primary/5 border border-primary/15">
+              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                <Clock className="w-4 h-4 text-primary" />
               </div>
               <div>
-                <div className="text-[10px] uppercase tracking-widest mb-0.5" style={{ color: '#484F58', fontFamily: "'Barlow Condensed', sans-serif" }}>
+                <div className="text-[10px] uppercase tracking-wider text-text-muted mb-0.5">
                   다음 실행
                 </div>
-                <div className="text-[13px] font-semibold" style={{ color: '#818CF8', fontFamily: "'Barlow', sans-serif" }}>
+                <div className="text-sm font-semibold text-primary">
                   {nextRun ? formatNextRun(nextRun) : '저장 후 표시됩니다'}
                 </div>
                 {nextRun && (
-                  <div className="text-[10px] mt-0.5 font-mono" style={{ color: '#484F58', fontFamily: "'JetBrains Mono', monospace" }}>
+                  <div className="text-[10px] text-text-muted mt-0.5 font-mono">
                     {new Date(nextRun).toLocaleString('ko-KR')}
                   </div>
                 )}
@@ -356,41 +313,18 @@ export function WorkflowScheduleModal({ workflow, onClose }: Props) {
 
         {/* Footer */}
         <div className="flex gap-2 px-5 pb-5">
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex-1 h-9 rounded-xl text-[12px] transition-all border border-white/10 text-white/40 hover:bg-white/5"
-            style={{ fontFamily: "'Barlow', sans-serif" }}
-          >
+          <Button variant="secondary" className="flex-1" onClick={onClose}>
             취소
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            className="flex-1"
             onClick={() => saveMut.mutate()}
             disabled={saveMut.isPending}
-            className="flex-1 h-9 rounded-xl text-[12px] font-semibold transition-all disabled:opacity-50"
-            style={{
-              background: 'rgba(129,140,248,0.2)',
-              border: '1px solid rgba(129,140,248,0.4)',
-              color: '#818CF8',
-              fontFamily: "'Barlow', sans-serif",
-            }}
           >
             {saveMut.isPending ? '저장 중...' : '스케줄 저장'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
-  )
-}
-
-function Label({ children }: { children: React.ReactNode }) {
-  return (
-    <label
-      className="block text-[10px] font-bold uppercase tracking-widest"
-      style={{ color: '#484F58', fontFamily: "'Barlow Condensed', sans-serif" }}
-    >
-      {children}
-    </label>
   )
 }
