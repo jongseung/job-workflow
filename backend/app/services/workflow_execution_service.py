@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 import tempfile
 import uuid
 from collections import defaultdict, deque
@@ -212,14 +213,16 @@ async def _execute_dag(
                 tgt = edge["target"]
                 branch_cond = (edge.get("data") or {}).get("branch")
 
-                # Condition node branch filtering
+                # Branch filtering: skip this edge if _branch doesn't match
+                # When an edge has data.branch set, only follow it if the source
+                # node output _branch equals the edge branch value.
+                # Non-matching edges are simply blocked (in_degree stays unchanged),
+                # which means the downstream node will never reach in_degree=0
+                # and therefore will not be queued or executed.
                 if branch_cond is not None and isinstance(node_output, dict):
                     actual = str(node_output.get("_branch", "")).lower()
                     if actual != str(branch_cond).lower():
-                        in_degree[tgt] -= 1
-                        if in_degree[tgt] == 0 and tgt not in completed:
-                            queue.append(tgt)
-                        continue
+                        continue  # blocked edge — do NOT decrement in_degree
 
                 in_degree[tgt] -= 1
                 if in_degree[tgt] == 0 and tgt not in completed:
@@ -361,7 +364,7 @@ async def _run_python_code(code: str, input_data: dict) -> dict:
         os.write(tmp_fd, wrapper.encode())
         os.close(tmp_fd)
         proc = await asyncio.create_subprocess_exec(
-            "python3", "-u", tmp_path,
+            sys.executable, "-u", tmp_path,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -437,7 +440,13 @@ async def _run_http(module: StepModule, input_data: dict, node_data: dict) -> di
 
     try:
         import httpx
-        async with httpx.AsyncClient(timeout=30) as client:
+        # Use certifi for SSL certs (macOS Python.app doesn't bundle system certs)
+        try:
+            import certifi
+            _ssl_verify: str | bool = certifi.where()
+        except ImportError:
+            _ssl_verify = True
+        async with httpx.AsyncClient(timeout=30, verify=_ssl_verify) as client:
             if method in ("POST", "PUT", "PATCH"):
                 resp = await client.request(method, url, json=body, headers=headers)
             else:
@@ -448,11 +457,16 @@ async def _run_http(module: StepModule, input_data: dict, node_data: dict) -> di
             except Exception:
                 result = {"status": resp.status_code, "body": resp.text}
     except ImportError:
-        import urllib.request
+        import urllib.request, ssl
+        try:
+            import certifi as _certifi
+            _ssl_ctx = ssl.create_default_context(cafile=_certifi.where())
+        except ImportError:
+            _ssl_ctx = ssl.create_default_context()
         payload = json.dumps(body).encode()
         req = urllib.request.Request(url, payload, {**headers, "Content-Type": "application/json"})
         req.get_method = lambda: method
-        with urllib.request.urlopen(req, timeout=30) as r:
+        with urllib.request.urlopen(req, context=_ssl_ctx, timeout=30) as r:
             body_resp = r.read().decode()
             try:
                 result = json.loads(body_resp)

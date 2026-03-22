@@ -50,64 +50,70 @@ function WorkflowNodeComponent({ data, selected }: NodeProps) {
 
   return (
     <div
-      className={`
-        relative min-w-[200px] max-w-[240px] rounded-xl overflow-visible
-        border transition-all duration-200 select-none
-        ${STATUS_RING[execStatus || ''] || ''}
-        ${selected
-          ? 'border-white/30 shadow-[0_0_0_1px_rgba(255,255,255,0.15),0_8px_32px_rgba(0,0,0,0.6)]'
-          : 'shadow-[0_4px_20px_rgba(0,0,0,0.5)]'}
-      `}
-      style={{
-        background: meta.bg,
-        borderColor: selected ? 'rgba(255,255,255,0.25)' : meta.border,
-        backdropFilter: 'blur(12px)',
-      }}
+      className="relative min-w-[200px] max-w-[240px] select-none"
     >
-      {/* Colored accent bar on left */}
+      {/* Visual Container with exact same box clipping for the line */}
       <div
-        className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl"
-        style={{ background: color }}
-      />
-
-      {/* Header */}
-      <div className="flex items-center gap-2 px-3 pt-3 pb-2 pl-5">
-        <Icon size={15} style={{ color, flexShrink: 0 }} />
-        <div className="flex-1 min-w-0">
-          <div
-            className="text-[11px] font-semibold uppercase tracking-wider mb-0.5"
-            style={{ color }}
-          >
-            {meta.label}
-          </div>
-          <div className="text-[13px] font-medium text-white/90 truncate leading-tight">
-            {nodeData.label}
-          </div>
-        </div>
-
-        {/* Status indicator */}
-        {execStatus && (
-          <div className={`
-            w-2 h-2 rounded-full flex-shrink-0
-            ${execStatus === 'running'  ? 'bg-amber-400 animate-pulse' :
-              execStatus === 'success'  ? 'bg-emerald-400' :
-              execStatus === 'failed'   ? 'bg-red-400' :
-              'bg-zinc-500'}
-          `} />
-        )}
+        className={`absolute inset-0 rounded-xl overflow-hidden border transition-all duration-200
+          ${STATUS_RING[execStatus || ''] || ''}
+          ${selected
+            ? 'shadow-[0_0_0_1px_rgba(255,255,255,0.15),0_8px_32px_rgba(0,0,0,0.6)]'
+            : 'shadow-[0_4px_20px_rgba(0,0,0,0.5)]'}
+        `}
+        style={{
+          background: meta.bg,
+          borderColor: selected ? 'rgba(255,255,255,0.25)' : meta.border,
+          backdropFilter: 'blur(12px)',
+        }}
+      >
+        {/* The line gets perfectly clipped to the box's exact rounded corners */}
+        <div
+          className="absolute left-0 top-0 bottom-0 w-[4px]"
+          style={{ background: color }}
+        />
       </div>
 
-      {/* Category badge */}
-      {nodeData.category && nodeData.category !== 'core' && (
-        <div className="px-5 pb-2">
-          <span
-            className="inline-block text-[10px] px-1.5 py-0.5 rounded-full"
-            style={{ background: `${color}20`, color }}
-          >
-            {nodeData.category}
-          </span>
+      {/* Content */}
+      <div className="relative z-10">
+        {/* Header */}
+        <div className="flex items-center gap-2 px-3 pt-3 pb-2 pl-5">
+          <Icon size={15} style={{ color, flexShrink: 0 }} />
+          <div className="flex-1 min-w-0">
+            <div
+              className="text-[11px] font-semibold uppercase tracking-wider mb-0.5"
+              style={{ color }}
+            >
+              {meta.label}
+            </div>
+            <div className="text-[13px] font-medium text-white/90 truncate leading-tight">
+              {nodeData.label}
+            </div>
+          </div>
+
+          {/* Status indicator */}
+          {execStatus && (
+            <div className={`
+              w-2 h-2 rounded-full flex-shrink-0
+              ${execStatus === 'running'  ? 'bg-amber-400 animate-pulse' :
+                execStatus === 'success'  ? 'bg-emerald-400' :
+                execStatus === 'failed'   ? 'bg-red-400' :
+                'bg-zinc-500'}
+            `} />
+          )}
         </div>
-      )}
+
+        {/* Category badge */}
+        {nodeData.category && nodeData.category !== 'core' && (
+          <div className="px-5 pb-2">
+            <span
+              className="inline-block text-[10px] px-1.5 py-0.5 rounded-full"
+              style={{ background: `${color}20`, color }}
+            >
+              {nodeData.category}
+            </span>
+          </div>
+        )}
+      </div>
 
       {/* Input handle – left center */}
       {!isTrigger && (
@@ -119,6 +125,7 @@ function WorkflowNodeComponent({ data, selected }: NodeProps) {
             background: '#1a1f2e',
             borderColor: meta.color,
             left: -7,
+            zIndex: 20
           }}
         />
       )}
@@ -130,23 +137,23 @@ function WorkflowNodeComponent({ data, selected }: NodeProps) {
             id="true"
             type="source"
             position={Position.Right}
-            style={{ top: '35%', right: -7, background: '#10B981', borderColor: '#10B981', width: 12, height: 12, border: '2px solid #10B981' }}
+            style={{ top: '35%', right: -7, background: '#10B981', borderColor: '#10B981', width: 12, height: 12, border: '2px solid #10B981', zIndex: 20 }}
           />
           <Handle
             id="false"
             type="source"
             position={Position.Right}
-            style={{ top: '65%', right: -7, background: '#EF4444', borderColor: '#EF4444', width: 12, height: 12, border: '2px solid #EF4444' }}
+            style={{ top: '65%', right: -7, background: '#EF4444', borderColor: '#EF4444', width: 12, height: 12, border: '2px solid #EF4444', zIndex: 20 }}
           />
           <div
             className="absolute text-[9px] font-bold"
-            style={{ right: -28, top: 'calc(35% - 6px)', color: '#10B981' }}
+            style={{ right: -28, top: 'calc(35% - 6px)', color: '#10B981', zIndex: 20 }}
           >
             T
           </div>
           <div
             className="absolute text-[9px] font-bold"
-            style={{ right: -26, top: 'calc(65% - 6px)', color: '#EF4444' }}
+            style={{ right: -26, top: 'calc(65% - 6px)', color: '#EF4444', zIndex: 20 }}
           >
             F
           </div>
