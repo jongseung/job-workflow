@@ -1,0 +1,31 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - db-data:/data
+      - ./backend/jobs_storage:/app/jobs_storage
+    environment:
+      - SECRET_KEY=change-this-in-production
+      - DATABASE_URL=sqlite:////data/jobscheduler.db
+      - SCHEDULER_DATABASE_URL=sqlite:////data/scheduler.db
+      - CORS_ORIGINS=["http://localhost","http://localhost:80"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/system/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  db-data:

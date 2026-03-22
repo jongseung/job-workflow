@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.db
+*.db-wal
+*.db-shm
+.env
+venv/
+.venv/
+backend/jobs_venvs/
+
+# Node
+node_modules/
+dist/
+
+# IDE
+.vscode/
+.idea/
+
+# IDE / bkit
+.bkit/
+.claude/
+
+# Storage
+backend/jobs_storage/*
+!backend/jobs_storage/.gitkeep
+
+# OS
+.DS_Store
