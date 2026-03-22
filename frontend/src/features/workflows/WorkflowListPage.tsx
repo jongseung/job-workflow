@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { workflowsApi, type WorkflowOut } from '../../api/workflows'
+import { WorkflowScheduleModal } from './components/WorkflowScheduleModal'
 import { useUIStore } from '../../stores/uiStore'
 
 const STATUS_META: Record<string, { label: string; color: string; dot: string }> = {
@@ -36,6 +37,7 @@ export function WorkflowListPage() {
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
   const [search, setSearch] = useState('')
+  const [schedulingWf, setSchedulingWf] = useState<WorkflowOut | null>(null)
 
   const { data: workflows = [], isLoading } = useQuery({
     queryKey: ['workflows'],
@@ -223,6 +225,7 @@ export function WorkflowListPage() {
               workflow={wf}
               onEdit={() => navigate(`/workflows/${wf.id}/edit`)}
               onRun={() => runMut.mutate(wf.id)}
+              onSchedule={() => setSchedulingWf(wf)}
               onDelete={() => {
                 if (window.confirm(`"${wf.name}" 워크플로우를 삭제하시겠습니까?`)) {
                   deleteMut.mutate(wf.id)
@@ -232,23 +235,49 @@ export function WorkflowListPage() {
           ))}
         </div>
       )}
+
+      {/* Schedule modal */}
+      {schedulingWf && (
+        <WorkflowScheduleModal
+          workflow={schedulingWf}
+          onClose={() => {
+            setSchedulingWf(null)
+            qc.invalidateQueries({ queryKey: ['workflows'] })
+          }}
+        />
+      )}
     </div>
   )
+}
+
+function formatSchedule(wf: WorkflowOut): { label: string; color: string } | null {
+  if (wf.schedule_type === 'cron' && wf.cron_expression) {
+    return { label: wf.cron_expression, color: '#818CF8' }
+  }
+  if (wf.schedule_type === 'interval' && wf.interval_seconds) {
+    const s = wf.interval_seconds
+    const human = s < 60 ? `${s}s` : s < 3600 ? `${Math.round(s/60)}m` : `${Math.round(s/3600)}h`
+    return { label: `↻ ${human}`, color: '#22D3EE' }
+  }
+  return null
 }
 
 function WorkflowCard({
   workflow: wf,
   onEdit,
   onRun,
+  onSchedule,
   onDelete,
 }: {
   workflow: WorkflowOut
   onEdit: () => void
   onRun: () => void
+  onSchedule: () => void
   onDelete: () => void
 }) {
   const statusMeta = STATUS_META[wf.status] || STATUS_META.draft
   const runColor = wf.last_run_status ? (RUN_META[wf.last_run_status]?.color || '#6B7280') : '#484F58'
+  const schedInfo = formatSchedule(wf)
 
   return (
     <div
@@ -299,8 +328,23 @@ function WorkflowCard({
       {/* Stats row */}
       <div className="flex items-center gap-4">
         <Stat icon="⬡" label="노드" value={String(wf.node_count)} />
-        <Stat icon="⟳" label="스케줄" value={wf.schedule_type === 'manual' ? '수동' : wf.schedule_type} />
         <div className="flex-1" />
+        {/* Schedule badge */}
+        {schedInfo ? (
+          <div
+            className="flex items-center gap-1.5 px-2 py-1 rounded-lg"
+            style={{ background: `${schedInfo.color}12`, border: `1px solid ${schedInfo.color}30` }}
+          >
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} style={{ color: schedInfo.color }}>
+              <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+            </svg>
+            <span className="text-[10px] font-mono" style={{ color: schedInfo.color, fontFamily: "'JetBrains Mono', monospace" }}>
+              {schedInfo.label}
+            </span>
+          </div>
+        ) : (
+          <span className="text-[10px]" style={{ color: '#2a2a35', fontFamily: "'Barlow', sans-serif" }}>수동</span>
+        )}
         {wf.last_run_status && (
           <div className="flex items-center gap-1.5">
             <div className="w-1.5 h-1.5 rounded-full" style={{ background: runColor }} />
@@ -310,6 +354,21 @@ function WorkflowCard({
           </div>
         )}
       </div>
+
+      {/* Next run row */}
+      {wf.next_run_at && (
+        <div className="flex items-center gap-1.5 -mt-1">
+          <span className="text-[9px]" style={{ color: '#2a2a35', fontFamily: "'Barlow', sans-serif" }}>NEXT</span>
+          <span className="text-[10px]" style={{ color: '#818CF8', fontFamily: "'Barlow', sans-serif" }}>
+            {(() => {
+              const diff = new Date(wf.next_run_at).getTime() - Date.now()
+              if (diff < 60000) return `${Math.floor(diff / 1000)}초 후`
+              if (diff < 3600000) return `${Math.floor(diff / 60000)}분 후`
+              return `${Math.floor(diff / 3600000)}시간 후`
+            })()}
+          </span>
+        </div>
+      )}
 
       {/* Footer */}
       <div
@@ -322,18 +381,21 @@ function WorkflowCard({
 
         <div className="flex items-center gap-1">
           {/* Run button */}
-          <ActionButton
-            title="실행"
-            color="#10B981"
-            onClick={onRun}
-          >
+          <ActionButton title="실행" color="#10B981" onClick={onRun}>
             <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
               <polygon points="5 3 19 12 5 21 5 3" />
             </svg>
           </ActionButton>
 
+          {/* Schedule button */}
+          <ActionButton title="스케줄" color="#818CF8" onClick={onSchedule}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+            </svg>
+          </ActionButton>
+
           {/* Edit button */}
-          <ActionButton title="편집" color="#818CF8" onClick={onEdit}>
+          <ActionButton title="편집" color="#22D3EE" onClick={onEdit}>
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
               <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
               <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />

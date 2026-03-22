@@ -39,8 +39,10 @@ def create_workflow(db: Session, data: dict, user_id: str | None = None) -> Work
 
 def update_workflow(db: Session, workflow_id: str, data: dict) -> Workflow:
     wf = get_workflow(db, workflow_id)
+    # Allow explicit None for nullable schedule/canvas fields
+    nullable_keys = {"canvas_data", "description", "cron_expression", "interval_seconds", "tags"}
     for key, val in data.items():
-        if val is not None or key in ("canvas_data", "description", "cron_expression"):
+        if val is not None or key in nullable_keys:
             setattr(wf, key, val)
     wf.updated_at = datetime.now(timezone.utc)
     db.commit()
@@ -55,7 +57,9 @@ def delete_workflow(db: Session, workflow_id: str):
 
 
 def enrich_workflow_out(db: Session, wf: Workflow) -> dict:
-    """Add computed fields to workflow response."""
+    """Add computed fields (node_count, last run, next run) to workflow response."""
+    from app.scheduler.engine import get_workflow_next_run
+
     canvas = wf.canvas_data or {}
     node_count = len(canvas.get("nodes", []))
 
@@ -86,6 +90,7 @@ def enrich_workflow_out(db: Session, wf: Workflow) -> dict:
         "node_count": node_count,
         "last_run_status": last_run.status if last_run else None,
         "last_run_at": last_run.created_at if last_run else None,
+        "next_run_at": get_workflow_next_run(wf.id),
     }
     return data
 

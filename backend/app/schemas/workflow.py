@@ -49,6 +49,7 @@ class WorkflowOut(BaseModel):
     node_count: int = 0
     last_run_status: str | None = None
     last_run_at: datetime | None = None
+    next_run_at: str | None = None  # ISO string from APScheduler
 
     model_config = {"from_attributes": True}
 

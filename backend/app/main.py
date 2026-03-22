@@ -7,7 +7,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import init_db, SessionLocal
 from app.services.auth_service import create_default_admin
-from app.scheduler.engine import start_scheduler, shutdown_scheduler, sync_jobs_from_db
+from app.scheduler.engine import (
+    start_scheduler, shutdown_scheduler,
+    sync_jobs_from_db, sync_workflows_from_db,
+)
 
 
 @asynccontextmanager
@@ -51,9 +54,10 @@ async def lifespan(app: FastAPI):
         queue.start_processor(interval=settings.QUEUE_CHECK_INTERVAL)
     )
 
-    # APScheduler (v1 jobs)
+    # APScheduler — jobs + workflows
     start_scheduler()
     sync_jobs_from_db()
+    sync_workflows_from_db()
 
     yield
 

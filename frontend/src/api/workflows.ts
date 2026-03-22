@@ -19,6 +19,23 @@ export interface WorkflowOut {
   node_count: number
   last_run_status: string | null
   last_run_at: string | null
+  next_run_at: string | null
+}
+
+export interface WorkflowScheduleUpdate {
+  schedule_type: 'manual' | 'cron' | 'interval'
+  cron_expression?: string | null
+  interval_seconds?: number | null
+  is_active?: boolean
+}
+
+export interface WorkflowScheduleInfo {
+  workflow_id: string
+  schedule_type: 'manual' | 'cron' | 'interval'
+  cron_expression: string | null
+  interval_seconds: number | null
+  is_active: boolean
+  next_run_at: string | null
 }
 
 export interface CanvasNode {
@@ -108,4 +125,10 @@ export const workflowsApi = {
 
   getRun: (runId: string) =>
     apiClient.get<WorkflowRunOut>(`/workflows/runs/${runId}`),
+
+  setSchedule: (id: string, data: WorkflowScheduleUpdate) =>
+    apiClient.post<WorkflowOut>(`/workflows/${id}/schedule`, data),
+
+  getSchedule: (id: string) =>
+    apiClient.get<WorkflowScheduleInfo>(`/workflows/${id}/schedule`),
 }

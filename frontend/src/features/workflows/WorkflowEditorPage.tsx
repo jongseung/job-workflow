@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { WorkflowScheduleModal } from './components/WorkflowScheduleModal'
 import {
   ReactFlow,
   Background,
@@ -74,11 +75,13 @@ function EditorCanvas({
   initialNodes,
   initialEdges,
   workflowName,
+  workflowData,
 }: {
   workflowId: string
   initialNodes: Node[]
   initialEdges: Edge[]
   workflowName: string
+  workflowData: import('../../api/workflows').WorkflowOut
 }) {
   const navigate = useNavigate()
   const qc = useQueryClient()
@@ -91,6 +94,7 @@ function EditorCanvas({
   const [saving, setSaving] = useState(false)
   const [running, setRunning] = useState(false)
   const [dragModule, setDragModule] = useState<StepModule | null>(null)
+  const [showSchedule, setShowSchedule] = useState(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
 
   // WebSocket for live execution updates
@@ -307,6 +311,40 @@ function EditorCanvas({
 
           {/* Right: actions */}
           <div className="flex items-center gap-2">
+            {/* Schedule button */}
+            <button
+              type="button"
+              onClick={() => setShowSchedule(true)}
+              className="flex items-center gap-2 h-8 px-4 rounded-lg text-[12px] font-medium transition-all border"
+              style={{
+                background: workflowData.schedule_type !== 'manual'
+                  ? 'rgba(129,140,248,0.12)'
+                  : 'transparent',
+                borderColor: workflowData.schedule_type !== 'manual'
+                  ? 'rgba(129,140,248,0.35)'
+                  : 'rgba(255,255,255,0.08)',
+                color: workflowData.schedule_type !== 'manual' ? '#818CF8' : '#484F58',
+                fontFamily: "'Barlow', sans-serif",
+              }}
+              title="스케줄 설정"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 16 14" />
+              </svg>
+              {workflowData.schedule_type === 'cron'
+                ? workflowData.cron_expression || 'Cron'
+                : workflowData.schedule_type === 'interval'
+                ? workflowData.interval_seconds
+                  ? `↻ ${workflowData.interval_seconds < 60
+                      ? `${workflowData.interval_seconds}s`
+                      : workflowData.interval_seconds < 3600
+                      ? `${Math.round(workflowData.interval_seconds / 60)}m`
+                      : `${Math.round(workflowData.interval_seconds / 3600)}h`}`
+                  : '인터벌'
+                : '스케줄'}
+            </button>
+
             <button
               type="button"
               onClick={() => saveMut.mutate()}
@@ -425,6 +463,14 @@ function EditorCanvas({
         onDeleteNode={onDeleteNode}
         onClose={() => setSelectedNode(null)}
       />
+
+      {/* Schedule modal */}
+      {showSchedule && (
+        <WorkflowScheduleModal
+          workflow={workflowData}
+          onClose={() => setShowSchedule(false)}
+        />
+      )}
     </div>
   )
 }
@@ -505,6 +551,7 @@ export function WorkflowEditorPage() {
         initialNodes={rawNodes}
         initialEdges={rawEdges}
         workflowName={workflow.name}
+        workflowData={workflow}
       />
     </ReactFlowProvider>
   )

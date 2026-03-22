@@ -1,6 +1,8 @@
 import asyncio
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -12,8 +14,16 @@ from app.schemas.workflow import (
     WorkflowTrigger, WorkflowRunOut, WorkflowNodeRunOut,
 )
 from app.services import workflow_service
+from app.scheduler.engine import register_workflow, unregister_workflow, get_workflow_next_run
 
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
+
+
+class WorkflowScheduleUpdate(BaseModel):
+    schedule_type: str = Field(..., pattern="^(manual|cron|interval)$")
+    cron_expression: str | None = None
+    interval_seconds: int | None = None
+    is_active: bool | None = None
 
 
 # ─── Workflow CRUD ────────────────────────────────────────────────────────────
@@ -54,7 +64,17 @@ def update_workflow(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    wf = workflow_service.update_workflow(db, workflow_id, payload.model_dump(exclude_none=True))
+    updates = payload.model_dump(exclude_none=True)
+    wf = workflow_service.update_workflow(db, workflow_id, updates)
+
+    # Sync scheduler if schedule-related fields changed
+    schedule_fields = {"schedule_type", "cron_expression", "interval_seconds", "is_active"}
+    if schedule_fields & set(updates.keys()):
+        if wf.is_active and wf.schedule_type in ("cron", "interval"):
+            register_workflow(wf.id, wf.schedule_type, wf.cron_expression, wf.interval_seconds)
+        else:
+            unregister_workflow(wf.id)
+
     return workflow_service.enrich_workflow_out(db, wf)
 
 
@@ -64,7 +84,68 @@ def delete_workflow(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    unregister_workflow(workflow_id)
     workflow_service.delete_workflow(db, workflow_id)
+
+
+@router.post("/{workflow_id}/schedule", response_model=WorkflowOut)
+def set_workflow_schedule(
+    workflow_id: str,
+    payload: WorkflowScheduleUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Set or update the schedule for a workflow."""
+    updates: dict[str, Any] = {"schedule_type": payload.schedule_type}
+    if payload.cron_expression is not None:
+        updates["cron_expression"] = payload.cron_expression
+    if payload.interval_seconds is not None:
+        updates["interval_seconds"] = payload.interval_seconds
+    if payload.is_active is not None:
+        updates["is_active"] = payload.is_active
+
+    # Clear irrelevant fields
+    if payload.schedule_type == "cron":
+        updates["interval_seconds"] = None
+    elif payload.schedule_type == "interval":
+        updates["cron_expression"] = None
+    elif payload.schedule_type == "manual":
+        updates["cron_expression"] = None
+        updates["interval_seconds"] = None
+
+    wf = workflow_service.update_workflow(db, workflow_id, updates)
+
+    # Register or unregister
+    if wf.is_active and wf.schedule_type in ("cron", "interval"):
+        register_workflow(wf.id, wf.schedule_type, wf.cron_expression, wf.interval_seconds)
+    else:
+        unregister_workflow(wf.id)
+
+    enriched = workflow_service.enrich_workflow_out(db, wf)
+    # Attach next_run info
+    next_run = get_workflow_next_run(wf.id)
+    if isinstance(enriched, dict):
+        enriched["next_run_at"] = next_run
+    return enriched
+
+
+@router.get("/{workflow_id}/schedule")
+def get_workflow_schedule(
+    workflow_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get scheduling info including next scheduled run time."""
+    wf = workflow_service.get_workflow(db, workflow_id)
+    next_run = get_workflow_next_run(workflow_id)
+    return {
+        "workflow_id": workflow_id,
+        "schedule_type": wf.schedule_type,
+        "cron_expression": wf.cron_expression,
+        "interval_seconds": wf.interval_seconds,
+        "is_active": wf.is_active,
+        "next_run_at": next_run,
+    }
 
 
 # ─── Execution ────────────────────────────────────────────────────────────────
