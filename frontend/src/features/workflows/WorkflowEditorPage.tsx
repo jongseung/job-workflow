@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Clock, Save, Play, GitMerge, RefreshCw, Loader2, AlertTriangle } from 'lucide-react'
 import { WorkflowScheduleModal } from './components/WorkflowScheduleModal'
+import { WorkflowRunDrawer } from './components/WorkflowRunDrawer'
 import {
   ReactFlow,
   Background,
@@ -107,49 +108,10 @@ function EditorCanvas({
   const [selectedNode, setSelectedNode] = useState<Node | null>(null)
   const [saving, setSaving] = useState(false)
   const [running, setRunning] = useState(false)
+  const [runId, setRunId] = useState<string | null>(null)
   const [dragModule, setDragModule] = useState<StepModule | null>(null)
   const [showSchedule, setShowSchedule] = useState(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
-
-  // WebSocket for live execution updates
-  const wsRef = useRef<WebSocket | null>(null)
-  const nodesRef = useRef(nodes)
-  useEffect(() => { nodesRef.current = nodes }, [nodes])
-
-  useEffect(() => {
-    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    const ws = new WebSocket(`${protocol}://${window.location.hostname}:8000/ws/workflow/${workflowId}`)
-    wsRef.current = ws
-
-    ws.onmessage = (e) => {
-      try {
-        const msg = JSON.parse(e.data)
-        if (msg.event === 'node_update' && msg.node_id && msg.status) {
-          setNodes((nds) =>
-            nds.map((n) =>
-              n.id === msg.node_id
-                ? { ...n, data: { ...n.data, executionStatus: msg.status } }
-                : n
-            )
-          )
-        }
-        if (msg.event === 'workflow_complete') {
-          setRunning(false)
-          if (msg.status === 'success') {
-            addNotification({ type: 'success', message: '워크플로우 실행 완료!' })
-          } else {
-            addNotification({ type: 'error', message: `실행 실패: ${msg.error || '알 수 없는 오류'}` })
-          }
-          setTimeout(() => {
-            setNodes((nds) =>
-              nds.map((n) => ({ ...n, data: { ...n.data, executionStatus: undefined } }))
-            )
-          }, 5000)
-        }
-      } catch {}
-    }
-    return () => ws.close()
-  }, [workflowId])
 
   // Save mutation
   const saveMut = useMutation({
@@ -178,9 +140,13 @@ function EditorCanvas({
       })
       return workflowsApi.run(workflowId)
     },
-    onMutate: () => setRunning(true),
-    onSuccess: () => {
-      addNotification({ type: 'info', message: '워크플로우 실행 중...' })
+    onMutate: () => {
+      setRunning(true)
+      setRunId(null)
+    },
+    onSuccess: (res) => {
+      setRunning(false)
+      setRunId(res.data.id)
     },
     onError: () => {
       setRunning(false)
@@ -355,15 +321,15 @@ function EditorCanvas({
             <button
               type="button"
               onClick={() => runMut.mutate()}
-              disabled={running || runMut.isPending}
+              disabled={running || !!runId || runMut.isPending}
               className="flex items-center gap-2 h-8 px-3 rounded-lg text-[12px] font-semibold border border-success/40 bg-success/10 text-success hover:bg-success/20 transition-all disabled:opacity-40"
             >
-              {running ? (
+              {(running || runMut.isPending) ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : (
                 <Play className="w-3.5 h-3.5" />
               )}
-              {running ? '실행 중...' : '실행'}
+              {(running || runMut.isPending) ? '실행 중...' : '실행'}
             </button>
           </div>
         </div>
@@ -443,6 +409,17 @@ function EditorCanvas({
           onClose={() => setShowSchedule(false)}
         />
       )}
+
+      {/* Real-time execution log drawer */}
+      <WorkflowRunDrawer
+        workflowId={workflowId}
+        workflowName={workflowName}
+        runId={runId}
+        onClose={() => {
+          setRunId(null)
+          setRunning(false)
+        }}
+      />
     </div>
   )
 }

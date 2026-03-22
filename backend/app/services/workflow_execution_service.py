@@ -187,6 +187,15 @@ async def _execute_dag(
             _save_node_run(db, workflow_run_id, nid, nodes[nid], "skipped",
                            execution_order, None, None, "Upstream node failed")
             context.set_error(nid, "Skipped due to upstream failure")
+            nd = nodes[nid].get("data", {})
+            await _broadcast("workflow_node_update", {
+                "workflow_run_id": workflow_run_id,
+                "node_id": nid,
+                "node_label": nd.get("label", nid),
+                "node_type": nd.get("moduleType", "unknown"),
+                "status": "skipped",
+                "error": "업스트림 노드 실패로 건너뜀",
+            })
             execution_order += 1
             completed.add(nid)
 
@@ -265,6 +274,8 @@ async def _execute_node(
     await _broadcast("workflow_node_update", {
         "workflow_run_id": workflow_run_id,
         "node_id": node_id,
+        "node_label": label,
+        "node_type": node_type,
         "status": "running",
     })
 
@@ -283,27 +294,37 @@ async def _execute_node(
         node_run.duration_ms = duration_ms
         db.commit()
 
+        # Build a brief output summary for the log (avoid huge payloads)
+        output_summary = _summarize_output(output_dict)
+
         await _broadcast("workflow_node_update", {
             "workflow_run_id": workflow_run_id,
             "node_id": node_id,
+            "node_label": label,
+            "node_type": node_type,
             "status": "success",
-            "output": output_dict,
+            "duration_ms": duration_ms,
+            "output_summary": output_summary,
         })
         return output_dict
 
     except Exception as exc:
         finished = datetime.now(timezone.utc)
+        duration_ms = int((finished - started).total_seconds() * 1000)
         node_run.status = "failed"
         node_run.error_message = str(exc)
         node_run.finished_at = finished
-        node_run.duration_ms = int((finished - started).total_seconds() * 1000)
+        node_run.duration_ms = duration_ms
         db.commit()
 
         await _broadcast("workflow_node_update", {
             "workflow_run_id": workflow_run_id,
             "node_id": node_id,
+            "node_label": label,
+            "node_type": node_type,
             "status": "failed",
-            "error": str(exc),
+            "duration_ms": duration_ms,
+            "error": str(exc)[:500],
         })
         raise
 
@@ -598,6 +619,29 @@ def _save_node_run(
     )
     db.add(nr)
     db.commit()
+
+
+def _summarize_output(output: dict) -> str:
+    """Return a short human-readable summary of a node output dict."""
+    if not output:
+        return ""
+    # Prefer high-level summary fields
+    for key in ("message", "summary", "status", "total", "count"):
+        if key in output:
+            return f"{key}={output[key]}"
+    # For row arrays
+    if "rows" in output and isinstance(output["rows"], list):
+        return f"{len(output['rows'])}행 반환"
+    if "result" in output and isinstance(output["result"], list):
+        return f"{len(output['result'])}개 항목"
+    # Fallback: first key-value pair
+    try:
+        first_key = next(k for k in output if not k.startswith("_"))
+        val = output[first_key]
+        val_str = str(val)[:60] if not isinstance(val, (dict, list)) else f"({type(val).__name__})"
+        return f"{first_key}={val_str}"
+    except StopIteration:
+        return ""
 
 
 async def _broadcast(event_type: str, data: dict):
