@@ -185,9 +185,10 @@ function EditorCanvas({
         addEdge(
           {
             ...params,
+            type: 'smoothstep',
             animated: false,
             style: {
-              stroke: branch === 'true' ? '#10B981' : branch === 'false' ? '#EF4444' : '#334155',
+              stroke: branch === 'true' ? '#00C48C' : branch === 'false' ? '#EF4444' : '#404058',
               strokeWidth: 2,
             },
             data: { branch },
@@ -301,14 +302,14 @@ function EditorCanvas({
   const isScheduled = workflowData.schedule_type !== 'manual'
 
   return (
-    <div className="flex h-screen bg-bg-primary">
+    <div className="flex h-screen" style={{ background: '#16161E' }}>
       {/* Module Sidebar */}
       <ModuleSidebar onDragStart={setDragModule} />
 
       {/* Canvas */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Toolbar */}
-        <div className="h-14 flex items-center justify-between px-4 border-b border-border bg-bg-card flex-shrink-0">
+        {/* Toolbar — n8n style */}
+        <div className="h-12 flex items-center justify-between px-4 border-b border-white/[0.06] flex-shrink-0" style={{ background: '#1e1e2e' }}>
           {/* Left: back + name */}
           <div className="flex items-center gap-3">
             <button
@@ -392,7 +393,7 @@ function EditorCanvas({
           </div>
         </div>
 
-        {/* React Flow canvas */}
+        {/* React Flow canvas — n8n-style */}
         <div ref={wrapperRef} className="flex-1" onDragOver={onDragOver} onDrop={onDrop}>
           <ReactFlow
             nodes={nodes}
@@ -404,42 +405,47 @@ function EditorCanvas({
             onPaneClick={onPaneClick}
             nodeTypes={nodeTypes}
             fitView
-            fitViewOptions={{ padding: 0.2 }}
-            minZoom={0.3}
-            maxZoom={2.5}
+            fitViewOptions={{ padding: 0.3 }}
+            minZoom={0.2}
+            maxZoom={3}
             deleteKeyCode="Delete"
-            style={{ background: '#080B12' }}
+            defaultEdgeOptions={{
+              type: 'smoothstep',
+              animated: false,
+              style: { strokeWidth: 2, stroke: '#404058' },
+            }}
+            style={{ background: '#16161E' }}
             proOptions={{ hideAttribution: true }}
           >
             <Background
               variant={BackgroundVariant.Dots}
-              gap={24}
-              size={1}
-              color="rgba(255,255,255,0.04)"
+              gap={20}
+              size={1.2}
+              color="rgba(255,255,255,0.035)"
             />
             <Controls
-              className="!bg-bg-card !border !border-border !rounded-xl overflow-hidden"
-              style={{ boxShadow: 'none' }}
+              className="!bg-[#1e1e2e] !border !border-white/[0.06] !rounded-xl overflow-hidden !shadow-lg"
+              style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.4)' }}
             />
             <MiniMap
               nodeColor={(n) => {
                 const d = n.data as WorkflowNodeData
                 const colors: Record<string, string> = {
-                  trigger: '#22D3EE', action: '#F59E0B', data: '#818CF8',
-                  transform: '#10B981', condition: '#F472B6', merge: '#A78BFA'
+                  trigger: '#FF6D5A', action: '#FF9F43', data: '#7C5CFC',
+                  transform: '#00C48C', condition: '#E056A0', merge: '#9B8AFB'
                 }
-                return colors[d?.moduleType] || '#F59E0B'
+                return colors[d?.moduleType] || '#FF9F43'
               }}
-              className="!bg-bg-card !border !border-border !rounded-xl"
-              maskColor="rgba(8,11,18,0.85)"
+              className="!bg-[#1e1e2e] !border !border-white/[0.06] !rounded-xl"
+              maskColor="rgba(22,22,30,0.85)"
             />
 
             {/* Empty state hint */}
             {nodes.length === 0 && (
               <Panel position="top-center" style={{ marginTop: '40%' }}>
                 <div className="text-center pointer-events-none">
-                  <GitMerge className="w-12 h-12 text-text-muted opacity-10 mx-auto mb-3" />
-                  <p className="text-[13px] text-text-muted opacity-20">
+                  <GitMerge className="w-14 h-14 text-white/5 mx-auto mb-4" />
+                  <p className="text-[14px] text-white/15 font-medium">
                     왼쪽에서 모듈을 드래그하여 캔버스에 추가하세요
                   </p>
                 </div>
@@ -536,13 +542,14 @@ export function WorkflowEditorPage() {
     target: e.target,
     sourceHandle: e.sourceHandle ?? undefined,
     targetHandle: e.targetHandle ?? undefined,
+    type: 'smoothstep',
     animated: false,
     style: {
       stroke: e.data?.branch === 'true'
-        ? '#10B981'
+        ? '#00C48C'
         : e.data?.branch === 'false'
         ? '#EF4444'
-        : '#334155',
+        : '#404058',
       strokeWidth: 2,
     },
     data: e.data || {},

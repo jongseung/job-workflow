@@ -179,25 +179,58 @@
   color: var(--color-text-primary);
 }
 
-/* ── React Flow overrides ── */
+/* ── React Flow overrides — n8n style ── */
 .react-flow__attribution { display: none !important; }
+
+/* Controls */
 .react-flow__controls-button {
-  background: #0D1117 !important;
+  background: #1e1e2e !important;
   border-color: rgba(255,255,255,0.06) !important;
-  fill: #484F58 !important;
+  fill: #606078 !important;
+  transition: all 150ms !important;
 }
 .react-flow__controls-button:hover {
-  background: rgba(255,255,255,0.05) !important;
-  fill: #848D97 !important;
+  background: #2a2a3e !important;
+  fill: #9B8AFB !important;
 }
+
+/* Edges — smooth, subtle */
 .react-flow__edge-path {
-  stroke: #334155;
+  stroke: #404058;
   stroke-width: 2;
+  transition: stroke 200ms;
+}
+.react-flow__edge:hover .react-flow__edge-path {
+  stroke: #7C5CFC !important;
+  stroke-width: 2.5;
 }
 .react-flow__edge.selected .react-flow__edge-path {
-  stroke: #818CF8 !important;
+  stroke: #9B8AFB !important;
+  stroke-width: 2.5;
 }
+
+/* Connection line while dragging */
+.react-flow__connection-path {
+  stroke: #7C5CFC !important;
+  stroke-width: 2 !important;
+  stroke-dasharray: 6 3;
+}
+
+/* Handles — subtle, glow on hover */
 .react-flow__handle {
   cursor: crosshair;
+  transition: all 150ms !important;
 }
-.react-flow__minimap-mask { fill: rgba(8,11,18,0.85) !important; }
+.react-flow__handle:hover {
+  transform: scale(1.3);
+  box-shadow: 0 0 8px rgba(124, 92, 252, 0.5);
+}
+
+/* Selection box */
+.react-flow__selection {
+  background: rgba(124, 92, 252, 0.08) !important;
+  border: 1px solid rgba(124, 92, 252, 0.3) !important;
+}
+
+/* Minimap */
+.react-flow__minimap-mask { fill: rgba(22,22,30,0.85) !important; }

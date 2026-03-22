@@ -1,30 +1,29 @@
 import { memo } from 'react'
 import { Handle, Position } from '@xyflow/react'
 import type { NodeProps } from '@xyflow/react'
-import { Zap, Settings, Database, RefreshCw, GitBranch, Merge } from 'lucide-react'
+import { Zap, Settings, Database, GitBranch, Merge, Code2 } from 'lucide-react'
 
 type LucideIcon = React.ComponentType<{ className?: string; size?: number; style?: React.CSSProperties }>
 
 export const NODE_TYPE_META: Record<string, {
   color: string
-  bg: string
-  border: string
+  iconBg: string
   Icon: LucideIcon
   label: string
 }> = {
-  trigger:   { color: '#22D3EE', bg: 'rgba(34,211,238,0.06)',   border: 'rgba(34,211,238,0.35)',  Icon: Zap,       label: 'Trigger'   },
-  action:    { color: '#F59E0B', bg: 'rgba(245,158,11,0.06)',   border: 'rgba(245,158,11,0.35)',  Icon: Settings,  label: 'Action'    },
-  data:      { color: '#818CF8', bg: 'rgba(129,140,248,0.06)',  border: 'rgba(129,140,248,0.35)', Icon: Database,  label: 'Data'      },
-  transform: { color: '#10B981', bg: 'rgba(16,185,129,0.06)',   border: 'rgba(16,185,129,0.35)',  Icon: RefreshCw, label: 'Transform' },
-  condition: { color: '#F472B6', bg: 'rgba(244,114,182,0.06)',  border: 'rgba(244,114,182,0.35)', Icon: GitBranch, label: 'Condition' },
-  merge:     { color: '#A78BFA', bg: 'rgba(167,139,250,0.06)',  border: 'rgba(167,139,250,0.35)', Icon: Merge,     label: 'Merge'     },
+  trigger:   { color: '#FF6D5A', iconBg: '#FF6D5A', Icon: Zap,       label: 'Trigger'   },
+  action:    { color: '#FF9F43', iconBg: '#FF9F43', Icon: Settings,  label: 'Action'    },
+  data:      { color: '#7C5CFC', iconBg: '#7C5CFC', Icon: Database,  label: 'Data'      },
+  transform: { color: '#00C48C', iconBg: '#00C48C', Icon: Code2,     label: 'Transform' },
+  condition: { color: '#E056A0', iconBg: '#E056A0', Icon: GitBranch, label: 'Condition' },
+  merge:     { color: '#9B8AFB', iconBg: '#9B8AFB', Icon: Merge,     label: 'Merge'     },
 }
 
-const STATUS_RING: Record<string, string> = {
-  running: 'shadow-[0_0_0_2px_#F59E0B] animate-pulse',
-  success: 'shadow-[0_0_0_2px_#10B981]',
-  failed:  'shadow-[0_0_0_2px_#EF4444]',
-  skipped: 'shadow-[0_0_0_2px_#4B5563]',
+const EXEC_STATUS_STYLES: Record<string, { ring: string; badge: string; text: string }> = {
+  running: { ring: 'ring-2 ring-amber-400/70 ring-offset-1 ring-offset-[#1e1e2e]', badge: 'bg-amber-400', text: 'text-amber-200' },
+  success: { ring: 'ring-2 ring-emerald-400/70 ring-offset-1 ring-offset-[#1e1e2e]', badge: 'bg-emerald-400', text: 'text-emerald-200' },
+  failed:  { ring: 'ring-2 ring-red-400/70 ring-offset-1 ring-offset-[#1e1e2e]', badge: 'bg-red-400', text: 'text-red-200' },
+  skipped: { ring: 'ring-2 ring-zinc-500/50 ring-offset-1 ring-offset-[#1e1e2e]', badge: 'bg-zinc-500', text: 'text-zinc-400' },
 }
 
 export interface WorkflowNodeData {
@@ -44,17 +43,14 @@ export interface WorkflowNodeData {
 
 /** Extract top-level field names from an output schema or executor type. */
 function getOutputFields(nodeData: WorkflowNodeData): string[] {
-  // From explicit output_schema
   if (nodeData.outputSchema?.properties) {
     const props = nodeData.outputSchema.properties as Record<string, unknown>
-    return Object.keys(props).slice(0, 5)
+    return Object.keys(props).slice(0, 4)
   }
-  // Well-known defaults by executor type
   const etype = nodeData.executorType
-  if (etype === 'sql') return ['rows', 'count', 'columns']
+  if (etype === 'sql') return ['rows', 'count']
   if (etype === 'http') return ['result']
   if (etype === 'python') return ['result']
-  // By module type
   if (nodeData.moduleType === 'condition') return ['_branch']
   return []
 }
@@ -62,108 +58,96 @@ function getOutputFields(nodeData: WorkflowNodeData): string[] {
 function WorkflowNodeComponent({ data, selected }: NodeProps) {
   const nodeData = data as WorkflowNodeData
   const meta = NODE_TYPE_META[nodeData.moduleType] || NODE_TYPE_META.action
-  const { Icon, color } = meta
+  const { Icon, color, iconBg } = meta
   const execStatus = nodeData.executionStatus
   const isCondition = nodeData.moduleType === 'condition'
   const isTrigger = nodeData.moduleType === 'trigger'
   const outputFields = getOutputFields(nodeData)
+  const statusStyle = execStatus ? EXEC_STATUS_STYLES[execStatus] : null
 
   return (
-    <div
-      className="relative min-w-[200px] max-w-[240px] select-none"
-    >
-      {/* Visual Container with exact same box clipping for the line */}
+    <div className="group relative select-none">
+      {/* Main card — n8n style */}
       <div
-        className={`absolute inset-0 rounded-xl overflow-hidden border transition-all duration-200
-          ${STATUS_RING[execStatus || ''] || ''}
+        className={`
+          relative flex items-stretch rounded-2xl overflow-hidden
+          transition-all duration-200 cursor-pointer
+          ${statusStyle?.ring || ''}
           ${selected
-            ? 'shadow-[0_0_0_1px_rgba(255,255,255,0.15),0_8px_32px_rgba(0,0,0,0.6)]'
-            : 'shadow-[0_4px_20px_rgba(0,0,0,0.5)]'}
+            ? 'shadow-[0_0_0_2px_rgba(124,92,252,0.6),0_8px_40px_rgba(0,0,0,0.5)]'
+            : 'shadow-[0_2px_12px_rgba(0,0,0,0.4)] hover:shadow-[0_4px_24px_rgba(0,0,0,0.5)]'}
         `}
         style={{
-          background: meta.bg,
-          borderColor: selected ? 'rgba(255,255,255,0.25)' : meta.border,
-          backdropFilter: 'blur(12px)',
+          background: '#1e1e2e',
+          border: `1px solid ${selected ? 'rgba(124,92,252,0.4)' : 'rgba(255,255,255,0.06)'}`,
+          minWidth: 200,
         }}
       >
-        {/* The line gets perfectly clipped to the box's exact rounded corners */}
+        {/* Icon section — large colored square */}
         <div
-          className="absolute left-0 top-0 bottom-0 w-[4px]"
-          style={{ background: color }}
-        />
-      </div>
-
-      {/* Content */}
-      <div className="relative z-10">
-        {/* Header */}
-        <div className="flex items-center gap-2 px-3 pt-3 pb-2 pl-5">
-          <Icon size={15} style={{ color, flexShrink: 0 }} />
-          <div className="flex-1 min-w-0">
-            <div
-              className="text-[11px] font-semibold uppercase tracking-wider mb-0.5"
-              style={{ color }}
-            >
-              {meta.label}
-            </div>
-            <div className="text-[13px] font-medium text-white/90 truncate leading-tight">
-              {nodeData.label}
-            </div>
-          </div>
-
-          {/* Status indicator */}
-          {execStatus && (
-            <div className={`
-              w-2 h-2 rounded-full flex-shrink-0
-              ${execStatus === 'running'  ? 'bg-amber-400 animate-pulse' :
-                execStatus === 'success'  ? 'bg-emerald-400' :
-                execStatus === 'failed'   ? 'bg-red-400' :
-                'bg-zinc-500'}
-            `} />
-          )}
+          className="flex items-center justify-center flex-shrink-0"
+          style={{
+            width: 56,
+            background: iconBg,
+          }}
+        >
+          <Icon size={24} className="text-white" />
         </div>
 
-        {/* Category badge */}
-        {nodeData.category && nodeData.category !== 'core' && (
-          <div className="px-5 pb-2">
-            <span
-              className="inline-block text-[10px] px-1.5 py-0.5 rounded-full"
-              style={{ background: `${color}20`, color }}
-            >
-              {nodeData.category}
-            </span>
+        {/* Content section */}
+        <div className="flex-1 min-w-0 px-3 py-2.5">
+          {/* Type label */}
+          <div
+            className="text-[9px] font-bold uppercase tracking-[0.12em] mb-0.5 opacity-50"
+            style={{ color }}
+          >
+            {meta.label}
           </div>
-        )}
 
-        {/* Output fields hint */}
-        {outputFields.length > 0 && (
-          <div className="px-5 pb-2.5">
-            <div className="flex items-center gap-1 flex-wrap">
-              <span className="text-[9px] text-white/25 mr-0.5">출력:</span>
+          {/* Node name */}
+          <div className="text-[13px] font-semibold text-white/90 truncate leading-tight">
+            {nodeData.label}
+          </div>
+
+          {/* Output fields preview */}
+          {outputFields.length > 0 && (
+            <div className="flex items-center gap-1 mt-1.5 flex-wrap">
               {outputFields.map((f) => (
                 <span
                   key={f}
-                  className="text-[9px] font-mono px-1 py-px rounded"
-                  style={{ background: `${color}15`, color: `${color}90` }}
+                  className="text-[9px] font-mono px-1.5 py-0.5 rounded-md bg-white/5 text-white/30"
                 >
                   {f}
                 </span>
               ))}
             </div>
+          )}
+        </div>
+
+        {/* Execution status indicator — top-right dot */}
+        {execStatus && (
+          <div className="absolute top-2 right-2 flex items-center gap-1.5">
+            <div className={`w-2 h-2 rounded-full ${statusStyle?.badge} ${execStatus === 'running' ? 'animate-pulse' : ''}`} />
           </div>
         )}
       </div>
 
-      {/* Input handle – left center */}
+      {/* ─── Handles ─── */}
+
+      {/* Input handle — left */}
       {!isTrigger && (
         <Handle
           type="target"
           position={Position.Left}
-          className="!w-3 !h-3 !border-2 !rounded-full transition-all"
+          className="
+            !w-4 !h-4 !rounded-full !border-[2.5px] !bg-[#1e1e2e]
+            hover:!border-[#7C5CFC] hover:!bg-[#7C5CFC]/20
+            transition-all duration-150
+          "
           style={{
-            background: '#1a1f2e',
-            borderColor: meta.color,
-            left: -7,
-            zIndex: 20
+            borderColor: 'rgba(255,255,255,0.15)',
+            left: -8,
+            zIndex: 20,
           }}
         />
       )}
@@ -171,27 +155,44 @@ function WorkflowNodeComponent({ data, selected }: NodeProps) {
       {/* Output handles */}
       {isCondition ? (
         <>
+          {/* True branch — green */}
           <Handle
             id="true"
             type="source"
             position={Position.Right}
-            style={{ top: '35%', right: -7, background: '#10B981', borderColor: '#10B981', width: 12, height: 12, border: '2px solid #10B981', zIndex: 20 }}
+            className="!w-4 !h-4 !rounded-full !border-[2.5px] transition-all duration-150"
+            style={{
+              top: '30%',
+              right: -8,
+              background: '#1e1e2e',
+              borderColor: '#00C48C',
+              zIndex: 20,
+            }}
           />
+          {/* False branch — red */}
           <Handle
             id="false"
             type="source"
             position={Position.Right}
-            style={{ top: '65%', right: -7, background: '#EF4444', borderColor: '#EF4444', width: 12, height: 12, border: '2px solid #EF4444', zIndex: 20 }}
+            className="!w-4 !h-4 !rounded-full !border-[2.5px] transition-all duration-150"
+            style={{
+              top: '70%',
+              right: -8,
+              background: '#1e1e2e',
+              borderColor: '#EF4444',
+              zIndex: 20,
+            }}
           />
+          {/* Branch labels */}
           <div
-            className="absolute text-[9px] font-bold"
-            style={{ right: -28, top: 'calc(35% - 6px)', color: '#10B981', zIndex: 20 }}
+            className="absolute text-[9px] font-bold tracking-wider pointer-events-none"
+            style={{ right: -30, top: 'calc(30% - 6px)', color: '#00C48C', zIndex: 20 }}
           >
             T
           </div>
           <div
-            className="absolute text-[9px] font-bold"
-            style={{ right: -26, top: 'calc(65% - 6px)', color: '#EF4444', zIndex: 20 }}
+            className="absolute text-[9px] font-bold tracking-wider pointer-events-none"
+            style={{ right: -28, top: 'calc(70% - 6px)', color: '#EF4444', zIndex: 20 }}
           >
             F
           </div>
@@ -200,11 +201,15 @@ function WorkflowNodeComponent({ data, selected }: NodeProps) {
         <Handle
           type="source"
           position={Position.Right}
-          className="!w-3 !h-3 !border-2 !rounded-full transition-all"
+          className="
+            !w-4 !h-4 !rounded-full !border-[2.5px] !bg-[#1e1e2e]
+            hover:!border-[#7C5CFC] hover:!bg-[#7C5CFC]/20
+            transition-all duration-150
+          "
           style={{
-            background: '#1a1f2e',
-            borderColor: meta.color,
-            right: -7,
+            borderColor: 'rgba(255,255,255,0.15)',
+            right: -8,
+            zIndex: 20,
           }}
         />
       )}
