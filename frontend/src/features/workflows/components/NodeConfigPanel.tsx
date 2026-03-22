@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { Node } from '@xyflow/react'
 import { Trash2, X, GitMerge, ArrowLeft } from 'lucide-react'
@@ -70,6 +70,10 @@ function extractOutputFields(
   return [{ path: 'result', type: 'any' }]
 }
 
+const MIN_PANEL_W = 260
+const MAX_PANEL_W = 560
+const DEFAULT_PANEL_W = 288
+
 export function NodeConfigPanel({
   node,
   allNodes,
@@ -81,6 +85,38 @@ export function NodeConfigPanel({
 }: NodeConfigPanelProps) {
   const [localLabel, setLocalLabel] = useState('')
   const [activeTab, setActiveTab] = useState<'config' | 'mapping' | 'info'>('config')
+  const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_W)
+  const isResizing = useRef(false)
+  const startX = useRef(0)
+  const startW = useRef(0)
+
+  // ── Resize logic ──
+  const onResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    isResizing.current = true
+    startX.current = e.clientX
+    startW.current = panelWidth
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+  }, [panelWidth])
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!isResizing.current) return
+      // dragging left = wider panel (negative delta)
+      const delta = startX.current - e.clientX
+      setPanelWidth(Math.min(MAX_PANEL_W, Math.max(MIN_PANEL_W, startW.current + delta)))
+    }
+    const onUp = () => {
+      if (!isResizing.current) return
+      isResizing.current = false
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+  }, [])
 
   const nodeData = node?.data as WorkflowNodeData | undefined
 
@@ -135,7 +171,17 @@ export function NodeConfigPanel({
 
   if (!node || !nodeData) {
     return (
-      <div className="w-72 flex-shrink-0 h-full flex flex-col items-center justify-center border-l border-border bg-bg-card">
+      <div
+        className="flex-shrink-0 h-full flex flex-col items-center justify-center border-l border-border bg-bg-card relative"
+        style={{ width: panelWidth }}
+      >
+        {/* Resize handle */}
+        <div
+          className="absolute top-0 left-0 w-1.5 h-full cursor-col-resize group z-10 hover:bg-primary/20 active:bg-primary/30 transition-colors"
+          onMouseDown={onResizeMouseDown}
+        >
+          <div className="absolute top-1/2 -translate-y-1/2 left-0 w-1 h-8 rounded-full bg-border group-hover:bg-primary/50 group-active:bg-primary transition-colors" />
+        </div>
         <GitMerge className="w-10 h-10 text-text-muted mb-3 opacity-30" />
         <div className="text-[12px] text-text-muted">노드를 클릭하여 설정하세요</div>
       </div>
@@ -195,7 +241,18 @@ export function NodeConfigPanel({
   const showTestPanel = workflowId && workflowId !== 'new' && moduleType !== 'trigger'
 
   return (
-    <div className="w-72 flex-shrink-0 h-full flex flex-col border-l border-border bg-bg-card overflow-hidden">
+    <div
+      className="flex-shrink-0 h-full flex flex-col border-l border-border bg-bg-card overflow-hidden relative"
+      style={{ width: panelWidth }}
+    >
+      {/* Resize handle */}
+      <div
+        className="absolute top-0 left-0 w-1.5 h-full cursor-col-resize group z-10 hover:bg-primary/20 active:bg-primary/30 transition-colors"
+        onMouseDown={onResizeMouseDown}
+      >
+        <div className="absolute top-1/2 -translate-y-1/2 left-0 w-1 h-8 rounded-full bg-border group-hover:bg-primary/50 group-active:bg-primary transition-colors" />
+      </div>
+
       {/* Header */}
       <div
         className="flex items-center justify-between px-4 py-3 border-b"

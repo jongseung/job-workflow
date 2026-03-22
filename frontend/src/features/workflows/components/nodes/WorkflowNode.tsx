@@ -19,11 +19,20 @@ export const NODE_TYPE_META: Record<string, {
   merge:     { color: '#9B8AFB', iconBg: '#9B8AFB', Icon: Merge,     label: 'Merge'     },
 }
 
-const EXEC_STATUS_STYLES: Record<string, { ring: string; badge: string; text: string }> = {
-  running: { ring: 'ring-2 ring-amber-400/70 ring-offset-1 ring-offset-[#1e1e2e]', badge: 'bg-amber-400', text: 'text-amber-200' },
-  success: { ring: 'ring-2 ring-emerald-400/70 ring-offset-1 ring-offset-[#1e1e2e]', badge: 'bg-emerald-400', text: 'text-emerald-200' },
-  failed:  { ring: 'ring-2 ring-red-400/70 ring-offset-1 ring-offset-[#1e1e2e]', badge: 'bg-red-400', text: 'text-red-200' },
-  skipped: { ring: 'ring-2 ring-zinc-500/50 ring-offset-1 ring-offset-[#1e1e2e]', badge: 'bg-zinc-500', text: 'text-zinc-400' },
+/* Obsidian theme tokens (matches project CSS vars) */
+const OBS = {
+  cardBg: 'rgba(17, 17, 19, 0.75)',
+  cardSolid: '#111113',
+  border: '#1f1f24',
+  borderLight: '#2a2a32',
+  primary: '#00d4ff',
+}
+
+const EXEC_STATUS_STYLES: Record<string, { ring: string; badge: string }> = {
+  running: { ring: `ring-2 ring-amber-400/70 ring-offset-1 ring-offset-[${OBS.cardSolid}]`, badge: 'bg-amber-400' },
+  success: { ring: `ring-2 ring-emerald-400/70 ring-offset-1 ring-offset-[${OBS.cardSolid}]`, badge: 'bg-emerald-400' },
+  failed:  { ring: `ring-2 ring-red-400/70 ring-offset-1 ring-offset-[${OBS.cardSolid}]`, badge: 'bg-red-400' },
+  skipped: { ring: `ring-2 ring-zinc-500/50 ring-offset-1 ring-offset-[${OBS.cardSolid}]`, badge: 'bg-zinc-500' },
 }
 
 export interface WorkflowNodeData {
@@ -67,29 +76,27 @@ function WorkflowNodeComponent({ data, selected }: NodeProps) {
 
   return (
     <div className="group relative select-none">
-      {/* Main card — n8n style */}
+      {/* Main card — n8n layout + Obsidian theme */}
       <div
         className={`
           relative flex items-stretch rounded-2xl overflow-hidden
           transition-all duration-200 cursor-pointer
           ${statusStyle?.ring || ''}
           ${selected
-            ? 'shadow-[0_0_0_2px_rgba(124,92,252,0.6),0_8px_40px_rgba(0,0,0,0.5)]'
-            : 'shadow-[0_2px_12px_rgba(0,0,0,0.4)] hover:shadow-[0_4px_24px_rgba(0,0,0,0.5)]'}
+            ? `shadow-[0_0_0_1.5px_rgba(0,212,255,0.5),0_8px_40px_rgba(0,0,0,0.6)]`
+            : 'shadow-[0_2px_16px_rgba(0,0,0,0.5)] hover:shadow-[0_4px_28px_rgba(0,0,0,0.6)]'}
         `}
         style={{
-          background: '#1e1e2e',
-          border: `1px solid ${selected ? 'rgba(124,92,252,0.4)' : 'rgba(255,255,255,0.06)'}`,
+          background: OBS.cardBg,
+          backdropFilter: 'blur(16px)',
+          border: `1px solid ${selected ? 'rgba(0,212,255,0.35)' : OBS.border}`,
           minWidth: 200,
         }}
       >
-        {/* Icon section — large colored square */}
+        {/* Icon section — large colored block */}
         <div
           className="flex items-center justify-center flex-shrink-0"
-          style={{
-            width: 56,
-            background: iconBg,
-          }}
+          style={{ width: 56, background: iconBg }}
         >
           <Icon size={24} className="text-white" />
         </div>
@@ -98,14 +105,14 @@ function WorkflowNodeComponent({ data, selected }: NodeProps) {
         <div className="flex-1 min-w-0 px-3 py-2.5">
           {/* Type label */}
           <div
-            className="text-[9px] font-bold uppercase tracking-[0.12em] mb-0.5 opacity-50"
+            className="text-[9px] font-bold uppercase tracking-[0.12em] mb-0.5 opacity-60"
             style={{ color }}
           >
             {meta.label}
           </div>
 
           {/* Node name */}
-          <div className="text-[13px] font-semibold text-white/90 truncate leading-tight">
+          <div className="text-[13px] font-semibold text-[#f0f0f0] truncate leading-tight">
             {nodeData.label}
           </div>
 
@@ -115,7 +122,8 @@ function WorkflowNodeComponent({ data, selected }: NodeProps) {
               {outputFields.map((f) => (
                 <span
                   key={f}
-                  className="text-[9px] font-mono px-1.5 py-0.5 rounded-md bg-white/5 text-white/30"
+                  className="text-[9px] font-mono px-1.5 py-0.5 rounded-md text-[#5a5a65]"
+                  style={{ background: 'rgba(255,255,255,0.04)' }}
                 >
                   {f}
                 </span>
@@ -124,9 +132,9 @@ function WorkflowNodeComponent({ data, selected }: NodeProps) {
           )}
         </div>
 
-        {/* Execution status indicator — top-right dot */}
+        {/* Execution status indicator — top-right */}
         {execStatus && (
-          <div className="absolute top-2 right-2 flex items-center gap-1.5">
+          <div className="absolute top-2 right-2">
             <div className={`w-2 h-2 rounded-full ${statusStyle?.badge} ${execStatus === 'running' ? 'animate-pulse' : ''}`} />
           </div>
         )}
@@ -139,13 +147,10 @@ function WorkflowNodeComponent({ data, selected }: NodeProps) {
         <Handle
           type="target"
           position={Position.Left}
-          className="
-            !w-4 !h-4 !rounded-full !border-[2.5px] !bg-[#1e1e2e]
-            hover:!border-[#7C5CFC] hover:!bg-[#7C5CFC]/20
-            transition-all duration-150
-          "
+          className="!w-4 !h-4 !rounded-full !border-[2.5px] transition-all duration-150"
           style={{
-            borderColor: 'rgba(255,255,255,0.15)',
+            background: OBS.cardSolid,
+            borderColor: OBS.borderLight,
             left: -8,
             zIndex: 20,
           }}
@@ -155,35 +160,20 @@ function WorkflowNodeComponent({ data, selected }: NodeProps) {
       {/* Output handles */}
       {isCondition ? (
         <>
-          {/* True branch — green */}
           <Handle
             id="true"
             type="source"
             position={Position.Right}
             className="!w-4 !h-4 !rounded-full !border-[2.5px] transition-all duration-150"
-            style={{
-              top: '30%',
-              right: -8,
-              background: '#1e1e2e',
-              borderColor: '#00C48C',
-              zIndex: 20,
-            }}
+            style={{ top: '30%', right: -8, background: OBS.cardSolid, borderColor: '#00C48C', zIndex: 20 }}
           />
-          {/* False branch — red */}
           <Handle
             id="false"
             type="source"
             position={Position.Right}
             className="!w-4 !h-4 !rounded-full !border-[2.5px] transition-all duration-150"
-            style={{
-              top: '70%',
-              right: -8,
-              background: '#1e1e2e',
-              borderColor: '#EF4444',
-              zIndex: 20,
-            }}
+            style={{ top: '70%', right: -8, background: OBS.cardSolid, borderColor: '#EF4444', zIndex: 20 }}
           />
-          {/* Branch labels */}
           <div
             className="absolute text-[9px] font-bold tracking-wider pointer-events-none"
             style={{ right: -30, top: 'calc(30% - 6px)', color: '#00C48C', zIndex: 20 }}
@@ -201,13 +191,10 @@ function WorkflowNodeComponent({ data, selected }: NodeProps) {
         <Handle
           type="source"
           position={Position.Right}
-          className="
-            !w-4 !h-4 !rounded-full !border-[2.5px] !bg-[#1e1e2e]
-            hover:!border-[#7C5CFC] hover:!bg-[#7C5CFC]/20
-            transition-all duration-150
-          "
+          className="!w-4 !h-4 !rounded-full !border-[2.5px] transition-all duration-150"
           style={{
-            borderColor: 'rgba(255,255,255,0.15)',
+            background: OBS.cardSolid,
+            borderColor: OBS.borderLight,
             right: -8,
             zIndex: 20,
           }}

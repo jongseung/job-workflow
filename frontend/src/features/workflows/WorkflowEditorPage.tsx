@@ -188,7 +188,7 @@ function EditorCanvas({
             type: 'smoothstep',
             animated: false,
             style: {
-              stroke: branch === 'true' ? '#00C48C' : branch === 'false' ? '#EF4444' : '#404058',
+              stroke: branch === 'true' ? '#00C48C' : branch === 'false' ? '#EF4444' : '#2a2a32',
               strokeWidth: 2,
             },
             data: { branch },
@@ -247,6 +247,10 @@ function EditorCanvas({
     setSelectedNode(null)
   }, [])
 
+  const onEdgeClick = useCallback(() => {
+    setSelectedNode(null)
+  }, [])
+
   const onDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
@@ -302,14 +306,14 @@ function EditorCanvas({
   const isScheduled = workflowData.schedule_type !== 'manual'
 
   return (
-    <div className="flex h-screen" style={{ background: '#16161E' }}>
+    <div className="flex h-screen bg-bg-primary">
       {/* Module Sidebar */}
       <ModuleSidebar onDragStart={setDragModule} />
 
       {/* Canvas */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Toolbar — n8n style */}
-        <div className="h-12 flex items-center justify-between px-4 border-b border-white/[0.06] flex-shrink-0" style={{ background: '#1e1e2e' }}>
+        {/* Toolbar */}
+        <div className="h-12 flex items-center justify-between px-4 border-b border-border bg-bg-card flex-shrink-0">
           {/* Left: back + name */}
           <div className="flex items-center gap-3">
             <button
@@ -402,30 +406,32 @@ function EditorCanvas({
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onNodeClick={onNodeClick}
+            onEdgeClick={onEdgeClick}
             onPaneClick={onPaneClick}
             nodeTypes={nodeTypes}
             fitView
             fitViewOptions={{ padding: 0.3 }}
             minZoom={0.2}
             maxZoom={3}
-            deleteKeyCode="Delete"
             defaultEdgeOptions={{
               type: 'smoothstep',
               animated: false,
-              style: { strokeWidth: 2, stroke: '#404058' },
+              style: { strokeWidth: 2, stroke: '#2a2a32' },
             }}
-            style={{ background: '#16161E' }}
+            edgesReconnectable
+            deleteKeyCode={['Delete', 'Backspace']}
+            style={{ background: '#09090b' }}
             proOptions={{ hideAttribution: true }}
           >
             <Background
               variant={BackgroundVariant.Dots}
-              gap={20}
-              size={1.2}
+              gap={22}
+              size={1}
               color="rgba(255,255,255,0.035)"
             />
             <Controls
-              className="!bg-[#1e1e2e] !border !border-white/[0.06] !rounded-xl overflow-hidden !shadow-lg"
-              style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.4)' }}
+              className="!bg-bg-card !border !border-border !rounded-xl overflow-hidden"
+              style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.5)' }}
             />
             <MiniMap
               nodeColor={(n) => {
@@ -436,16 +442,16 @@ function EditorCanvas({
                 }
                 return colors[d?.moduleType] || '#FF9F43'
               }}
-              className="!bg-[#1e1e2e] !border !border-white/[0.06] !rounded-xl"
-              maskColor="rgba(22,22,30,0.85)"
+              className="!bg-bg-card !border !border-border !rounded-xl"
+              maskColor="rgba(9,9,11,0.85)"
             />
 
             {/* Empty state hint */}
             {nodes.length === 0 && (
               <Panel position="top-center" style={{ marginTop: '40%' }}>
                 <div className="text-center pointer-events-none">
-                  <GitMerge className="w-14 h-14 text-white/5 mx-auto mb-4" />
-                  <p className="text-[14px] text-white/15 font-medium">
+                  <GitMerge className="w-14 h-14 text-text-muted opacity-10 mx-auto mb-4" />
+                  <p className="text-[14px] text-text-muted opacity-20 font-medium">
                     왼쪽에서 모듈을 드래그하여 캔버스에 추가하세요
                   </p>
                 </div>
@@ -549,7 +555,7 @@ export function WorkflowEditorPage() {
         ? '#00C48C'
         : e.data?.branch === 'false'
         ? '#EF4444'
-        : '#404058',
+        : '#2a2a32',
       strokeWidth: 2,
     },
     data: e.data || {},
