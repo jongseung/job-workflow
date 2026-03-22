@@ -44,6 +44,7 @@ class Job(Base):
     max_concurrent: Mapped[int] = mapped_column(Integer, default=1)  # 0=unlimited, 1=no dupes
     depends_on: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON: ["job_id_1", ...]
     created_by: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
+    updated_by: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
     )
@@ -51,7 +52,8 @@ class Job(Base):
         DateTime, nullable=True, onupdate=lambda: datetime.now(timezone.utc)
     )
 
-    creator = relationship("User", back_populates="jobs")
+    creator = relationship("User", foreign_keys=[created_by], back_populates="jobs")
+    updater = relationship("User", foreign_keys=[updated_by])
     datasource = relationship("DataSource", foreign_keys=[datasource_id])
     runs = relationship("JobRun", back_populates="job", cascade="all, delete-orphan", lazy="dynamic")
 

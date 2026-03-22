@@ -1,0 +1,164 @@
+import apiClient from './client'
+
+export interface WorkflowOut {
+  id: string
+  name: string
+  description: string | null
+  canvas_data: { nodes: CanvasNode[]; edges: CanvasEdge[] } | null
+  status: 'draft' | 'active' | 'archived'
+  is_active: boolean
+  schedule_type: 'manual' | 'cron' | 'interval'
+  cron_expression: string | null
+  interval_seconds: number | null
+  timeout_seconds: number
+  webhook_token: string | null
+  tags: string[] | null
+  created_by: string | null
+  created_by_name: string | null
+  updated_by: string | null
+  updated_by_name: string | null
+  created_at: string
+  updated_at: string | null
+  node_count: number
+  last_run_status: string | null
+  last_run_at: string | null
+  next_run_at: string | null
+}
+
+export interface WorkflowScheduleUpdate {
+  schedule_type: 'manual' | 'cron' | 'interval'
+  cron_expression?: string | null
+  interval_seconds?: number | null
+  is_active?: boolean
+}
+
+export interface WorkflowScheduleInfo {
+  workflow_id: string
+  schedule_type: 'manual' | 'cron' | 'interval'
+  cron_expression: string | null
+  interval_seconds: number | null
+  is_active: boolean
+  next_run_at: string | null
+}
+
+export interface CanvasNode {
+  id: string
+  type: string
+  position: { x: number; y: number }
+  data: {
+    label: string
+    moduleType: string
+    moduleId: string | null
+    config: Record<string, unknown>
+    inputMapping: Record<string, InputMapping>
+  }
+}
+
+export type InputMappingType = 'node_output' | 'static' | 'initial'
+
+export interface InputMapping {
+  type: InputMappingType
+  nodeId?: string
+  path?: string
+  value?: unknown
+}
+
+export interface CanvasEdge {
+  id: string
+  source: string
+  target: string
+  sourceHandle?: string | null
+  targetHandle?: string | null
+  data?: { branch?: 'true' | 'false' | null }
+}
+
+export interface WorkflowRunOut {
+  id: string
+  workflow_id: string
+  status: 'pending' | 'running' | 'success' | 'failed' | 'cancelled'
+  trigger_type: string
+  context_data: Record<string, unknown> | null
+  started_at: string | null
+  finished_at: string | null
+  duration_ms: number | null
+  error_message: string | null
+  triggered_by: string | null
+  created_at: string
+  node_runs: WorkflowNodeRunOut[]
+}
+
+export interface WorkflowNodeRunOut {
+  id: string
+  workflow_run_id: string
+  node_id: string
+  module_id: string | null
+  node_type: string
+  node_label: string | null
+  status: 'pending' | 'running' | 'success' | 'failed' | 'skipped'
+  input_data: Record<string, unknown> | null
+  output_data: Record<string, unknown> | null
+  error_message: string | null
+  started_at: string | null
+  finished_at: string | null
+  duration_ms: number | null
+  execution_order: number
+  created_at: string
+}
+
+export interface NodeTestRequest {
+  node_data: CanvasNode['data']
+  input_data?: Record<string, unknown>
+}
+
+export interface NodeTestResult {
+  status: 'success' | 'error'
+  output?: Record<string, unknown>
+  error?: string
+}
+
+export interface QueryPreviewResult {
+  rows: Record<string, unknown>[]
+  count: number
+  columns: string[]
+}
+
+export const workflowsApi = {
+  list: () => apiClient.get<WorkflowOut[]>('/workflows'),
+
+  get: (id: string) => apiClient.get<WorkflowOut>(`/workflows/${id}`),
+
+  create: (data: { name: string; description?: string }) =>
+    apiClient.post<WorkflowOut>('/workflows', data),
+
+  update: (id: string, data: Partial<WorkflowOut> & { canvas_data?: unknown }) =>
+    apiClient.put<WorkflowOut>(`/workflows/${id}`, data),
+
+  delete: (id: string) => apiClient.delete(`/workflows/${id}`),
+
+  run: (id: string, contextData?: Record<string, unknown>) =>
+    apiClient.post<WorkflowRunOut>(`/workflows/${id}/run`, {
+      context_data: contextData || {},
+    }),
+
+  listRuns: (id: string, limit = 20) =>
+    apiClient.get<WorkflowRunOut[]>(`/workflows/${id}/runs`, { params: { limit } }),
+
+  getRun: (runId: string) =>
+    apiClient.get<WorkflowRunOut>(`/workflows/runs/${runId}`),
+
+  setSchedule: (id: string, data: WorkflowScheduleUpdate) =>
+    apiClient.post<WorkflowOut>(`/workflows/${id}/schedule`, data),
+
+  getSchedule: (id: string) =>
+    apiClient.get<WorkflowScheduleInfo>(`/workflows/${id}/schedule`),
+
+  /** Execute a single node in isolation for testing (no workflow run created) */
+  testNode: (workflowId: string, nodeId: string, data: NodeTestRequest) =>
+    apiClient.post<NodeTestResult>(`/workflows/${workflowId}/nodes/${nodeId}/test`, data),
+}
+
+export const datasourceWorkflowApi = {
+  /** Execute a SQL query with forced LIMIT 50 for safe preview */
+  queryPreview: (datasourceId: string, query: string) =>
+    apiClient.post<QueryPreviewResult>(`/datasources/${datasourceId}/query-preview`, { query }),
+}

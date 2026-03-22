@@ -36,6 +36,9 @@ export interface Job {
   max_concurrent: number;
   depends_on: string[] | null;
   created_by: string | null;
+  created_by_name: string | null;
+  updated_by: string | null;
+  updated_by_name: string | null;
   created_at: string;
   updated_at: string | null;
   last_run_status: string | null;
@@ -99,7 +102,10 @@ export interface JobListItem {
   schedule_type: string;
   is_active: boolean;
   tags: string[] | null;
+  created_by_name: string | null;
+  updated_by_name: string | null;
   created_at: string;
+  updated_at: string | null;
   last_run_status: string | null;
   last_run_at: string | null;
 }
@@ -152,6 +158,14 @@ export interface SystemStats {
   scheduler_running: boolean;
   scheduled_jobs: number;
   uptime_seconds: number;
+  // Workflow stats
+  total_workflows: number;
+  active_workflows: number;
+  wf_total_runs: number;
+  wf_success_runs: number;
+  wf_failed_runs: number;
+  wf_running_now: number;
+  wf_success_rate: number;
 }
 
 export interface QueueStatus {
