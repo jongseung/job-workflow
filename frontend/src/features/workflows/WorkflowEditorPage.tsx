@@ -433,6 +433,7 @@ function EditorCanvas({
         onUpdateNode={onUpdateNode}
         onDeleteNode={onDeleteNode}
         onClose={() => setSelectedNode(null)}
+        workflowId={workflowId}
       />
 
       {/* Schedule modal */}

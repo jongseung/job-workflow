@@ -224,6 +224,40 @@ def get_run(
     }
 
 
+# ─── Node Test ────────────────────────────────────────────────────────────────
+
+class NodeTestRequest(BaseModel):
+    node_data: dict          # full node.data from the canvas
+    input_data: dict = {}    # mock upstream data for testing
+
+
+@router.post("/{workflow_id}/nodes/{node_id}/test")
+async def test_node(
+    workflow_id: str,
+    node_id: str,
+    body: NodeTestRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Execute a single workflow node in isolation for testing purposes."""
+    from app.services.workflow_execution_service import _route_executor
+    from app.models.module import StepModule
+
+    nd = body.node_data
+    module_id = nd.get("moduleId")
+    module = db.query(StepModule).filter(StepModule.id == module_id).first() if module_id else None
+    node_type: str = nd.get("moduleType", "action")
+
+    # Merge static config + mock input
+    full_input = {**(nd.get("config") or {}), **body.input_data}
+
+    try:
+        output = await _route_executor(node_type, module, full_input, nd)
+        return {"status": "success", "output": output}
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)}
+
+
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 def _run_to_dict(run) -> dict:

@@ -102,6 +102,23 @@ export interface WorkflowNodeRunOut {
   created_at: string
 }
 
+export interface NodeTestRequest {
+  node_data: CanvasNode['data']
+  input_data?: Record<string, unknown>
+}
+
+export interface NodeTestResult {
+  status: 'success' | 'error'
+  output?: Record<string, unknown>
+  error?: string
+}
+
+export interface QueryPreviewResult {
+  rows: Record<string, unknown>[]
+  count: number
+  columns: string[]
+}
+
 export const workflowsApi = {
   list: () => apiClient.get<WorkflowOut[]>('/workflows'),
 
@@ -131,4 +148,14 @@ export const workflowsApi = {
 
   getSchedule: (id: string) =>
     apiClient.get<WorkflowScheduleInfo>(`/workflows/${id}/schedule`),
+
+  /** Execute a single node in isolation for testing (no workflow run created) */
+  testNode: (workflowId: string, nodeId: string, data: NodeTestRequest) =>
+    apiClient.post<NodeTestResult>(`/workflows/${workflowId}/nodes/${nodeId}/test`, data),
+}
+
+export const datasourceWorkflowApi = {
+  /** Execute a SQL query with forced LIMIT 50 for safe preview */
+  queryPreview: (datasourceId: string, query: string) =>
+    apiClient.post<QueryPreviewResult>(`/datasources/${datasourceId}/query-preview`, { query }),
 }

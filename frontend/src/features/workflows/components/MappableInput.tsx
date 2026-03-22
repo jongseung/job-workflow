@@ -6,6 +6,7 @@
  * Clicking an output field inserts it as a reference token.
  */
 import { useState, useRef, useEffect } from 'react'
+import { ChevronDown, X } from 'lucide-react'
 import type { InputMapping } from '../../../api/workflows'
 import { NODE_TYPE_META } from './nodes/WorkflowNode'
 
@@ -60,7 +61,7 @@ export function MappableInput({
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  const handleSelectField = (nodeId: string, nodeLabel: string, path: string) => {
+  const handleSelectField = (nodeId: string, _nodeLabel: string, path: string) => {
     onChange({ type: 'node_output', nodeId, path })
     setOpen(false)
   }
@@ -75,10 +76,7 @@ export function MappableInput({
 
   return (
     <div ref={ref} className="relative mb-3">
-      <label
-        className="block text-[11px] font-semibold uppercase tracking-wider mb-1.5"
-        style={{ color: '#848D97', fontFamily: "'Barlow Condensed', sans-serif" }}
-      >
+      <label className="block text-[11px] font-semibold uppercase tracking-wider text-text-muted mb-1.5">
         {label}
       </label>
 
@@ -86,15 +84,14 @@ export function MappableInput({
       <div
         className={`
           relative flex items-center rounded-lg border transition-all duration-150 cursor-text
-          ${open ? 'border-indigo-400/60 shadow-[0_0_0_2px_rgba(129,140,248,0.15)]' : 'border-white/10'}
-          ${isMapped ? 'bg-indigo-950/40' : 'bg-white/5'}
+          ${open ? 'border-primary/50 shadow-[0_0_0_2px_rgba(0,212,255,0.08)]' : 'border-border'}
+          ${isMapped ? 'bg-primary/5' : 'bg-bg-tertiary'}
         `}
         onClick={() => {
           if (!isMapped) setOpen(true)
         }}
       >
         {isMapped ? (
-          // Token chip showing the mapped reference
           <MappedToken
             nodeId={mapped!.nodeId!}
             path={mapped!.path || ''}
@@ -112,8 +109,7 @@ export function MappableInput({
               }}
               placeholder={placeholder || `${label}을 입력하거나 노드 출력을 선택하세요`}
               rows={3}
-              className="w-full bg-transparent text-[13px] text-white/80 px-3 py-2 outline-none resize-none placeholder:text-white/20"
-              style={{ fontFamily: "'Barlow', sans-serif" }}
+              className="w-full bg-transparent text-[12px] text-text-primary px-3 py-2 outline-none resize-none placeholder:text-text-muted"
             />
           ) : (
             <input
@@ -124,8 +120,7 @@ export function MappableInput({
                 onChange(type === 'number' ? Number(e.target.value) as unknown as string : e.target.value)
               }}
               placeholder={placeholder || `${label}을 입력하거나 노드 출력을 선택하세요`}
-              className="w-full bg-transparent text-[13px] text-white/80 px-3 py-2 outline-none placeholder:text-white/20"
-              style={{ fontFamily: "'Barlow', sans-serif" }}
+              className="w-full bg-transparent text-[12px] text-text-primary px-3 py-1.5 outline-none placeholder:text-text-muted"
               onFocus={() => setOpen(hasUpstream)}
             />
           )
@@ -137,44 +132,37 @@ export function MappableInput({
             type="button"
             className={`
               flex-shrink-0 w-8 h-full flex items-center justify-center
-              text-xs transition-colors rounded-r-lg
-              ${open ? 'text-indigo-400' : 'text-white/20 hover:text-white/50'}
+              transition-colors rounded-r-lg
+              ${open ? 'text-primary' : 'text-text-muted hover:text-text-secondary'}
             `}
-            style={{ minHeight: 36 }}
+            style={{ minHeight: 32 }}
             onMouseDown={(e) => { e.preventDefault(); setOpen(!open) }}
             title="노드 출력에서 매핑"
           >
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
-              <path d="M5 7L1 3h8L5 7z" />
-            </svg>
+            <ChevronDown className="w-3 h-3" />
           </button>
         )}
       </div>
 
       {/* Dropdown */}
       {open && hasUpstream && (
-        <div
-          className="absolute left-0 right-0 top-full mt-1 z-50 rounded-xl border border-white/10 overflow-hidden shadow-2xl"
-          style={{ background: '#0D1117' }}
-        >
-          <div
-            className="px-3 py-2 text-[10px] uppercase tracking-widest border-b border-white/5"
-            style={{ color: '#484F58', fontFamily: "'Barlow Condensed', sans-serif" }}
-          >
+        <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-lg border border-border overflow-hidden shadow-2xl bg-bg-card">
+          <div className="px-3 py-1.5 text-[10px] uppercase tracking-widest text-text-muted border-b border-border bg-bg-tertiary">
             이전 노드 출력에서 선택
           </div>
           {upstreamOutputs.map((upstream) => {
             const meta = NODE_TYPE_META[upstream.moduleType] || NODE_TYPE_META.action
+            const { Icon } = meta
             return (
               <div key={upstream.nodeId}>
                 <div
                   className="flex items-center gap-2 px-3 py-1.5"
                   style={{ background: `${meta.color}08` }}
                 >
-                  <span className="text-sm">{meta.icon}</span>
+                  <Icon size={11} style={{ color: meta.color, flexShrink: 0 }} />
                   <span
                     className="text-[11px] font-semibold"
-                    style={{ color: meta.color, fontFamily: "'Barlow Condensed', sans-serif" }}
+                    style={{ color: meta.color }}
                   >
                     {upstream.nodeLabel}
                   </span>
@@ -184,28 +172,22 @@ export function MappableInput({
                     <button
                       key={field.path}
                       type="button"
-                      className="w-full flex items-center justify-between px-4 py-1.5 hover:bg-white/5 transition-colors group"
+                      className="w-full flex items-center justify-between px-4 py-1.5 hover:bg-bg-hover transition-colors group"
                       onClick={() => handleSelectField(upstream.nodeId, upstream.nodeLabel, field.path)}
                     >
                       <div className="flex items-center gap-2">
-                        <span
-                          className="text-[12px] font-mono"
-                          style={{ color: '#E6EDF3', fontFamily: "'JetBrains Mono', monospace" }}
-                        >
+                        <span className="text-[12px] font-mono text-text-primary">
                           {field.path}
                         </span>
                         <span
                           className="text-[10px] px-1 rounded"
-                          style={{ background: `${meta.color}20`, color: meta.color, fontFamily: "'Barlow', sans-serif" }}
+                          style={{ background: `${meta.color}20`, color: meta.color }}
                         >
                           {field.type}
                         </span>
                       </div>
                       {field.example !== undefined && (
-                        <span
-                          className="text-[10px] opacity-0 group-hover:opacity-100 transition-opacity truncate max-w-[80px] ml-2"
-                          style={{ color: '#484F58', fontFamily: "'JetBrains Mono', monospace" }}
-                        >
+                        <span className="text-[10px] opacity-0 group-hover:opacity-100 transition-opacity truncate max-w-[80px] ml-2 text-text-muted font-mono">
                           {JSON.stringify(field.example)}
                         </span>
                       )}
@@ -214,15 +196,10 @@ export function MappableInput({
                 ) : (
                   <button
                     type="button"
-                    className="w-full flex items-center gap-2 px-4 py-1.5 hover:bg-white/5 transition-colors"
+                    className="w-full flex items-center gap-2 px-4 py-1.5 hover:bg-bg-hover transition-colors"
                     onClick={() => handleSelectField(upstream.nodeId, upstream.nodeLabel, 'result')}
                   >
-                    <span
-                      className="text-[12px] font-mono"
-                      style={{ color: '#E6EDF3', fontFamily: "'JetBrains Mono', monospace" }}
-                    >
-                      result
-                    </span>
+                    <span className="text-[12px] font-mono text-text-primary">result</span>
                   </button>
                 )}
               </div>
@@ -249,33 +226,28 @@ function MappedToken({
 }) {
   const upstream = upstreamOutputs.find((u) => u.nodeId === nodeId)
   const meta = NODE_TYPE_META[upstream?.moduleType || 'action'] || NODE_TYPE_META.action
+  const { Icon } = meta
 
   return (
     <div
-      className="flex items-center gap-1.5 px-2.5 py-1.5 cursor-pointer flex-1"
+      className="flex items-center gap-1.5 px-2.5 py-1.5 cursor-pointer flex-1 min-w-0"
       onClick={onReopen}
     >
-      <span className="text-xs">{meta.icon}</span>
-      <span
-        className="text-[12px] font-medium"
-        style={{ color: meta.color, fontFamily: "'Barlow', sans-serif" }}
-      >
+      <Icon size={11} style={{ color: meta.color, flexShrink: 0 }} />
+      <span className="text-[12px] font-medium truncate" style={{ color: meta.color }}>
         {upstream?.nodeLabel || nodeId}
       </span>
-      <span className="text-white/30">→</span>
-      <span
-        className="text-[12px] font-mono"
-        style={{ color: '#E6EDF3', fontFamily: "'JetBrains Mono', monospace" }}
-      >
+      <span className="text-text-muted text-[11px] flex-shrink-0">→</span>
+      <span className="text-[12px] font-mono text-text-primary truncate">
         {path}
       </span>
       <button
         type="button"
-        className="ml-auto text-white/30 hover:text-white/70 transition-colors w-4 h-4 flex items-center justify-center rounded"
+        className="ml-auto text-text-muted hover:text-text-secondary transition-colors w-4 h-4 flex items-center justify-center rounded flex-shrink-0"
         onClick={onClear}
         title="매핑 해제"
       >
-        ×
+        <X className="w-3 h-3" />
       </button>
     </div>
   )

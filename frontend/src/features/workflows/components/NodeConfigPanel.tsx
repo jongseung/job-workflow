@@ -8,6 +8,13 @@ import { MappableInput, type UpstreamOutput } from './MappableInput'
 import { modulesApi } from '../../../api/modules'
 import type { InputMapping } from '../../../api/workflows'
 
+// Config editors
+import { SqlConfigEditor } from './config/SqlConfigEditor'
+import { HttpConfigEditor } from './config/HttpConfigEditor'
+import { PythonConfigEditor } from './config/PythonConfigEditor'
+import { OutputConfigSection } from './config/OutputConfigSection'
+import { NodeTestPanel } from './config/NodeTestPanel'
+
 interface NodeConfigPanelProps {
   node: Node | null
   allNodes: Node[]
@@ -15,6 +22,7 @@ interface NodeConfigPanelProps {
   onUpdateNode: (nodeId: string, data: Partial<WorkflowNodeData>) => void
   onDeleteNode: (nodeId: string) => void
   onClose: () => void
+  workflowId: string
 }
 
 export function NodeConfigPanel({
@@ -24,6 +32,7 @@ export function NodeConfigPanel({
   onUpdateNode,
   onDeleteNode,
   onClose,
+  workflowId,
 }: NodeConfigPanelProps) {
   const [localLabel, setLocalLabel] = useState('')
   const [activeTab, setActiveTab] = useState<'config' | 'mapping' | 'info'>('config')
@@ -88,9 +97,17 @@ export function NodeConfigPanel({
   const meta = NODE_TYPE_META[nodeData.moduleType] || NODE_TYPE_META.action
   const { Icon } = meta
 
+  // Helper: update a single config key
   const handleConfigChange = (key: string, value: unknown) => {
     onUpdateNode(node.id, {
       config: { ...(nodeData.config || {}), [key]: value },
+    })
+  }
+
+  // Helper: update multiple config keys at once
+  const handleConfigBatch = (updates: Record<string, unknown>) => {
+    onUpdateNode(node.id, {
+      config: { ...(nodeData.config || {}), ...updates },
     })
   }
 
@@ -110,11 +127,24 @@ export function NodeConfigPanel({
     ? parseSchemaFields(moduleInfo.input_schema)
     : []
 
+  const executorType = moduleInfo?.executor_type ?? 'builtin'
+  const moduleType = nodeData.moduleType
+  const cfg = nodeData.config || {}
+
   const TABS = [
     { key: 'config' as const,  label: '설정' },
     { key: 'mapping' as const, label: '매핑' },
     { key: 'info' as const,    label: '정보' },
   ]
+
+  // Determine if this node needs DB output section
+  const showOutputSection =
+    moduleType !== 'condition' &&
+    moduleType !== 'trigger' &&
+    moduleType !== 'merge'
+
+  // Determine if this node needs the test panel
+  const showTestPanel = workflowId && workflowId !== 'new' && moduleType !== 'trigger'
 
   return (
     <div className="w-72 flex-shrink-0 h-full flex flex-col border-l border-border bg-bg-card overflow-hidden">
@@ -192,16 +222,19 @@ export function NodeConfigPanel({
 
       {/* Tab content */}
       <div className="flex-1 overflow-y-auto p-4">
-        {/* Config tab */}
+
+        {/* ── CONFIG TAB ── */}
         {activeTab === 'config' && (
-          <div>
-            {nodeData.moduleType === 'condition' && (
+          <div className="space-y-4">
+
+            {/* Condition node */}
+            {moduleType === 'condition' && (
               <div>
                 <label className="block text-[11px] font-semibold uppercase tracking-wider text-text-muted mb-1.5">
                   조건식
                 </label>
                 <textarea
-                  value={(nodeData.config?.condition as string) || ''}
+                  value={(cfg.condition as string) || ''}
                   onChange={(e) => handleConfigChange('condition', e.target.value)}
                   placeholder="예: value > 10 or status == 'active'"
                   rows={3}
@@ -213,7 +246,74 @@ export function NodeConfigPanel({
               </div>
             )}
 
-            {inputFields.length > 0 && (
+            {/* Trigger: initial data */}
+            {moduleType === 'trigger' && (
+              <div>
+                <label className="block text-[11px] font-semibold uppercase tracking-wider text-text-muted mb-1.5">
+                  초기 데이터 (선택)
+                </label>
+                <textarea
+                  value={(cfg.initial_data as string) || ''}
+                  onChange={(e) => handleConfigChange('initial_data', e.target.value)}
+                  placeholder='{"key": "value"}'
+                  rows={4}
+                  className="w-full bg-bg-tertiary rounded-lg px-3 py-2 text-[12px] text-text-primary outline-none border border-border focus:border-primary/50 transition-colors resize-none font-mono"
+                />
+                <p className="mt-1.5 text-[10px] text-text-muted">
+                  워크플로우 실행 시 초기 컨텍스트로 전달됩니다
+                </p>
+              </div>
+            )}
+
+            {/* SQL executor */}
+            {executorType === 'sql' && (
+              <SqlConfigEditor
+                config={{
+                  datasource_id: (cfg.datasource_id as string) ?? null,
+                  query: (cfg.query as string) ?? moduleInfo?.executor_code ?? undefined,
+                }}
+                onChange={handleConfigBatch}
+                defaultQuery={moduleInfo?.executor_code ?? undefined}
+              />
+            )}
+
+            {/* HTTP executor */}
+            {executorType === 'http' && (
+              <HttpConfigEditor
+                config={{
+                  url: (cfg.url as string) ?? (moduleInfo?.executor_config as Record<string, unknown>)?.url as string ?? '',
+                  method: (cfg.method as 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH') ?? ((moduleInfo?.executor_config as Record<string, unknown>)?.method as 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH') ?? 'POST',
+                  headers: (cfg.headers as Record<string, string>) ?? ((moduleInfo?.executor_config as Record<string, unknown>)?.headers as Record<string, string>) ?? {},
+                  body_template: (cfg.body_template as string) ?? '',
+                }}
+                onChange={handleConfigBatch}
+              />
+            )}
+
+            {/* Python executor */}
+            {executorType === 'python' && (
+              <PythonConfigEditor
+                code={(cfg.code as string) ?? moduleInfo?.executor_code ?? ''}
+                onChange={(code) => handleConfigChange('code', code)}
+                defaultCode={moduleInfo?.executor_code ?? undefined}
+              />
+            )}
+
+            {/* Transform node (python variant) */}
+            {moduleType === 'transform' && executorType !== 'python' && (
+              <PythonConfigEditor
+                code={(cfg.code as string) ?? moduleInfo?.executor_code ?? ''}
+                onChange={(code) => handleConfigChange('code', code)}
+                defaultCode={moduleInfo?.executor_code ?? undefined}
+              />
+            )}
+
+            {/* Builtin with input_schema fields (non-condition/trigger) */}
+            {executorType === 'builtin' &&
+              moduleType !== 'condition' &&
+              moduleType !== 'trigger' &&
+              moduleType !== 'merge' &&
+              inputFields.length > 0 && (
               <div className="space-y-3">
                 {inputFields.map((field) => (
                   <div key={field.name}>
@@ -223,7 +323,7 @@ export function NodeConfigPanel({
                     </label>
                     <input
                       type="text"
-                      value={(nodeData.config?.[field.name] as string) || ''}
+                      value={(cfg[field.name] as string) || ''}
                       onChange={(e) => handleConfigChange(field.name, e.target.value)}
                       placeholder={field.description}
                       className="w-full bg-bg-tertiary rounded-lg px-3 py-1.5 text-[12px] text-text-primary outline-none border border-border focus:border-primary/50 transition-colors"
@@ -233,17 +333,38 @@ export function NodeConfigPanel({
               </div>
             )}
 
-            {inputFields.length === 0 && nodeData.moduleType !== 'condition' && (
-              <div className="text-center py-6 text-[12px] text-text-muted">
-                {nodeData.moduleId
-                  ? '설정 가능한 필드가 없습니다'
-                  : '모듈이 연결되지 않았습니다'}
+            {/* Merge: no config needed */}
+            {moduleType === 'merge' && (
+              <div className="text-center py-4 text-[12px] text-text-muted">
+                병렬 노드의 결과를 자동으로 합칩니다
               </div>
+            )}
+
+            {/* DB output section */}
+            {showOutputSection && (
+              <OutputConfigSection
+                config={{
+                  save_output: cfg.save_output as boolean,
+                  output_datasource_id: cfg.output_datasource_id as string,
+                  output_table: cfg.output_table as string,
+                  output_write_mode: cfg.output_write_mode as 'append' | 'replace' | 'upsert',
+                }}
+                onChange={handleConfigBatch}
+              />
+            )}
+
+            {/* Node test panel */}
+            {showTestPanel && (
+              <NodeTestPanel
+                workflowId={workflowId}
+                nodeId={node.id}
+                nodeData={nodeData}
+              />
             )}
           </div>
         )}
 
-        {/* Mapping tab */}
+        {/* ── MAPPING TAB ── */}
         {activeTab === 'mapping' && (
           <div>
             {upstreamOutputs.length === 0 ? (
@@ -273,7 +394,7 @@ export function NodeConfigPanel({
           </div>
         )}
 
-        {/* Info tab */}
+        {/* ── INFO TAB ── */}
         {activeTab === 'info' && moduleInfo && (
           <div className="space-y-4">
             <InfoRow label="Node ID" value={node.id} mono />
@@ -300,6 +421,12 @@ export function NodeConfigPanel({
                 </pre>
               </div>
             )}
+          </div>
+        )}
+
+        {activeTab === 'info' && !moduleInfo && (
+          <div className="text-center py-6 text-[12px] text-text-muted">
+            모듈 정보가 없습니다
           </div>
         )}
       </div>

@@ -323,27 +323,32 @@ async def _route_executor(
         return _run_condition(module, input_data, node_data)
 
     if node_type == "transform":
-        if module and module.executor_code:
-            return await _run_python(module.executor_code, input_data)
+        # node config 'code' takes priority over module.executor_code
+        node_cfg = node_data.get("config") or {}
+        code = node_cfg.get("code") or (module.executor_code if module else None) or ""
+        if code:
+            result = await _run_python_code(code, input_data)
+            await _maybe_save_output(node_cfg, result)
+            return result
         return input_data
 
     if not module:
         raise ValueError(f"Node '{node_type}' has no module configured")
 
     if module.executor_type == "python":
-        return await _run_python(module.executor_code or "", input_data)
+        return await _run_python(module, input_data, node_data)
     if module.executor_type == "http":
-        return await _run_http(module, input_data)
+        return await _run_http(module, input_data, node_data)
     if module.executor_type == "sql":
-        return await _run_sql(module, input_data)
+        return await _run_sql(module, input_data, node_data)
     if module.executor_type == "builtin":
         return _run_builtin(module, input_data)
 
     raise ValueError(f"Unknown executor type: {module.executor_type}")
 
 
-async def _run_python(code: str, input_data: dict) -> dict:
-    """Subprocess Python executor. Input via stdin, output via __OUTPUT__: line."""
+async def _run_python_code(code: str, input_data: dict) -> dict:
+    """Subprocess Python executor (low-level). Input via stdin, output via __OUTPUT__: line."""
     wrapper = (
         "import json as __json, sys as __sys\n"
         "input_data = __json.loads(__sys.stdin.read() or '{}')\n"
@@ -390,13 +395,43 @@ async def _run_python(code: str, input_data: dict) -> dict:
             pass
 
 
-async def _run_http(module: StepModule, input_data: dict) -> dict:
-    cfg = module.executor_config or {}
-    url = cfg.get("url", "")
-    method = cfg.get("method", "POST").upper()
-    headers = cfg.get("headers", {})
+async def _run_python(module: StepModule, input_data: dict, node_data: dict) -> dict:
+    """Python executor: node config 'code' takes priority over module.executor_code."""
+    node_cfg = node_data.get("config") or {}
+    code = node_cfg.get("code") or (module.executor_code if module else "") or ""
+    if not code:
+        raise ValueError("Python 노드에 실행할 코드가 없습니다")
+    result = await _run_python_code(code, input_data)
+    await _maybe_save_output(node_cfg, result)
+    return result
 
-    # Template substitution in URL
+
+async def _run_http(module: StepModule, input_data: dict, node_data: dict) -> dict:
+    """HTTP executor: node config (url/method/headers/body_template) takes priority over module config."""
+    node_cfg = node_data.get("config") or {}
+    mod_cfg = (module.executor_config or {}) if module else {}
+
+    url = node_cfg.get("url") or mod_cfg.get("url", "")
+    method = (node_cfg.get("method") or mod_cfg.get("method", "POST")).upper()
+    # Merge headers: module defaults, then node overrides
+    headers = {**(mod_cfg.get("headers") or {}), **(node_cfg.get("headers") or {})}
+
+    # body_template from node (JSON object) or fall back to input_data
+    body_raw = node_cfg.get("body_template")
+    if isinstance(body_raw, str):
+        try:
+            body = json.loads(body_raw)
+        except (json.JSONDecodeError, TypeError):
+            body = input_data
+    elif isinstance(body_raw, dict):
+        body = body_raw
+    else:
+        body = input_data
+
+    if not url:
+        raise ValueError("HTTP 노드에 URL이 설정되지 않았습니다")
+
+    # Template substitution in URL using input_data
     for k, v in input_data.items():
         url = url.replace(f"{{{k}}}", str(v))
 
@@ -404,37 +439,42 @@ async def _run_http(module: StepModule, input_data: dict) -> dict:
         import httpx
         async with httpx.AsyncClient(timeout=30) as client:
             if method in ("POST", "PUT", "PATCH"):
-                resp = await client.request(method, url, json=input_data, headers=headers)
+                resp = await client.request(method, url, json=body, headers=headers)
             else:
                 resp = await client.request(method, url, params=input_data, headers=headers)
 
             try:
-                return resp.json()
+                result = resp.json()
             except Exception:
-                return {"status": resp.status_code, "body": resp.text}
+                result = {"status": resp.status_code, "body": resp.text}
     except ImportError:
-        # Fallback: urllib
         import urllib.request
-        payload = json.dumps(input_data).encode()
+        payload = json.dumps(body).encode()
         req = urllib.request.Request(url, payload, {**headers, "Content-Type": "application/json"})
         req.get_method = lambda: method
         with urllib.request.urlopen(req, timeout=30) as r:
-            body = r.read().decode()
+            body_resp = r.read().decode()
             try:
-                return json.loads(body)
+                result = json.loads(body_resp)
             except json.JSONDecodeError:
-                return {"status": r.status, "body": body}
+                result = {"status": r.status, "body": body_resp}
+
+    await _maybe_save_output(node_cfg, result if isinstance(result, list) else [result])
+    return result if isinstance(result, dict) else {"result": result}
 
 
-async def _run_sql(module: StepModule, input_data: dict) -> dict:
-    cfg = module.executor_config or {}
-    datasource_id = cfg.get("datasource_id")
-    query = module.executor_code or cfg.get("query", "")
+async def _run_sql(module: StepModule, input_data: dict, node_data: dict) -> dict:
+    """SQL executor: node config (datasource_id/query) takes priority over module config."""
+    node_cfg = node_data.get("config") or {}
+    mod_cfg = (module.executor_config or {}) if module else {}
+
+    datasource_id = node_cfg.get("datasource_id") or mod_cfg.get("datasource_id")
+    query = node_cfg.get("query") or (module.executor_code if module else None) or mod_cfg.get("query", "")
 
     if not datasource_id:
-        raise ValueError("SQL executor requires datasource_id")
+        raise ValueError("SQL 노드에 데이터소스가 설정되지 않았습니다. 노드 설정에서 데이터소스를 선택해주세요.")
     if not query:
-        raise ValueError("SQL executor requires a query")
+        raise ValueError("SQL 노드에 쿼리가 없습니다. 노드 설정에서 SQL 쿼리를 입력해주세요.")
 
     from app.services.datasource_service import _get_connection
     from app.models.datasource import DataSource
@@ -443,23 +483,66 @@ async def _run_sql(module: StepModule, input_data: dict) -> dict:
     try:
         ds = db.query(DataSource).filter(DataSource.id == datasource_id).first()
         if not ds:
-            raise ValueError(f"Datasource {datasource_id} not found")
+            raise ValueError(f"데이터소스를 찾을 수 없습니다: {datasource_id}")
         conn, _ = _get_connection(ds)
         try:
             cur = conn.cursor()
-            params = list(input_data.values()) if input_data else []
-            cur.execute(query, params)
+            # Execute without positional params (user writes full query)
+            cur.execute(query)
             col_names = [d[0] for d in (cur.description or [])]
             rows = [
                 {c: (cell.isoformat() if hasattr(cell, "isoformat") else cell)
                  for c, cell in zip(col_names, row)}
                 for row in cur.fetchall()
             ]
-            return {"rows": rows, "count": len(rows), "columns": col_names}
+            result = {"rows": rows, "count": len(rows), "columns": col_names}
+            # Output saving
+            if rows:
+                await _maybe_save_output(node_cfg, rows)
+            return result
         finally:
             conn.close()
     finally:
         db.close()
+
+
+async def _maybe_save_output(node_cfg: dict, data: Any) -> None:
+    """Save node output to a datasource table if 'save_output' is configured."""
+    if not node_cfg.get("save_output"):
+        return
+    datasource_id = node_cfg.get("output_datasource_id")
+    table = node_cfg.get("output_table", "workflow_output")
+    write_mode = node_cfg.get("output_write_mode", "append")
+
+    if not datasource_id or not table:
+        return
+
+    try:
+        from app.services.datasource_service import insert_rows_to_table
+        from app.models.datasource import DataSource
+
+        rows: list[dict] = []
+        if isinstance(data, list):
+            rows = [r if isinstance(r, dict) else {"value": r} for r in data]
+        elif isinstance(data, dict):
+            rows = [data]
+        else:
+            rows = [{"value": data}]
+
+        if not rows:
+            return
+
+        db = SessionLocal()
+        try:
+            ds = db.query(DataSource).filter(DataSource.id == datasource_id).first()
+            if ds:
+                insert_rows_to_table(ds, table, rows, mode=write_mode)
+        finally:
+            db.close()
+    except Exception as exc:
+        # Don't fail the node execution if output saving fails — just log
+        import logging
+        logging.getLogger(__name__).warning(f"Output save failed: {exc}")
 
 
 def _run_condition(module: StepModule | None, input_data: dict, node_data: dict) -> dict:

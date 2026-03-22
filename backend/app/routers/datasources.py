@@ -238,3 +238,47 @@ def preview_table(
     except Exception as e:
         from fastapi import HTTPException
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Query preview (for workflow SQL node editor)
+# ---------------------------------------------------------------------------
+
+class QueryPreviewRequest(BaseModel):
+    query: str
+
+
+@router.post("/{ds_id}/query-preview")
+def query_preview(
+    ds_id: str,
+    data: QueryPreviewRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Execute a SQL query with a forced LIMIT 50 wrapper for safe preview.
+    Used by the workflow SQL node config editor.
+    """
+    from fastapi import HTTPException
+    from app.services.datasource_service import _get_connection
+
+    if not data.query.strip():
+        raise HTTPException(status_code=400, detail="Query cannot be empty")
+
+    ds = svc.get_datasource(db, ds_id)
+    conn, _ = _get_connection(ds)
+    try:
+        cur = conn.cursor()
+        # Wrap with LIMIT for safety — prevents full-table scans
+        safe_query = f"SELECT * FROM ({data.query.rstrip(';')}) AS __preview__ LIMIT 50"
+        cur.execute(safe_query)
+        col_names = [d[0] for d in (cur.description or [])]
+        rows = [
+            {c: (cell.isoformat() if hasattr(cell, "isoformat") else cell)
+             for c, cell in zip(col_names, row)}
+            for row in cur.fetchall()
+        ]
+        return {"rows": rows, "count": len(rows), "columns": col_names}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        conn.close()
