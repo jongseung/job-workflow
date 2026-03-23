@@ -29,41 +29,72 @@ Python 스크립트 작업과 워크플로우를 스케줄링하고 실행하는
 
 - Python 3.12+
 - Node.js 20+
-- PostgreSQL 14+ (또는 Docker로 실행)
+- PostgreSQL 14+
+
+---
 
 ### 1-1. PostgreSQL 준비
 
-**옵션 A: 로컬 PostgreSQL 사용**
+<details>
+<summary><b>macOS</b></summary>
 
 ```bash
-# macOS (Homebrew)
+# Homebrew로 설치
 brew install postgresql@16
 brew services start postgresql@16
 
 # DB 생성
 createdb -p 5432 job_scheduler
 ```
+</details>
 
-**옵션 B: Docker로 PostgreSQL만 실행**
+<details>
+<summary><b>Windows</b></summary>
 
-```bash
-docker run -d \
-  --name job-scheduler-db \
-  -e POSTGRES_DB=job_scheduler \
-  -e POSTGRES_USER=postgres \
-  -e POSTGRES_PASSWORD=postgres \
-  -p 5432:5432 \
-  postgres:16-alpine
+1. [PostgreSQL 공식 사이트](https://www.postgresql.org/download/windows/)에서 인스톨러 다운로드 후 설치
+2. 설치 중 비밀번호 설정 (예: `postgres`) — 이후 `.env`에 사용
+3. 설치 완료 후 **pgAdmin** 또는 **SQL Shell (psql)** 실행:
+
+```sql
+-- psql 접속 후
+CREATE DATABASE job_scheduler;
 ```
 
+또는 **명령 프롬프트**(PostgreSQL bin 폴더가 PATH에 추가된 경우):
+
+```cmd
+psql -U postgres -c "CREATE DATABASE job_scheduler;"
+```
+</details>
+
+<details>
+<summary><b>Linux (Ubuntu/Debian)</b></summary>
+
+```bash
+sudo apt update
+sudo apt install postgresql postgresql-contrib
+sudo systemctl start postgresql
+
+# postgres 사용자로 DB 생성
+sudo -u postgres createdb job_scheduler
+# 비밀번호 설정
+sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';"
+```
+</details>
+
+---
+
 ### 1-2. Backend 설정
+
+<details>
+<summary><b>macOS / Linux</b></summary>
 
 ```bash
 cd backend
 
 # 가상환경 생성 및 패키지 설치
 python3 -m venv venv
-source venv/bin/activate   # Windows: venv\Scripts\activate
+source venv/bin/activate
 pip install -r requirements.txt
 
 # 환경변수 설정 (.env 파일 생성)
@@ -80,8 +111,43 @@ EOF
 # 서버 실행 (DB 테이블 자동 생성됨)
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
+</details>
+
+<details>
+<summary><b>Windows (PowerShell)</b></summary>
+
+```powershell
+cd backend
+
+# 가상환경 생성 및 패키지 설치
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+
+# 환경변수 설정 (.env 파일 생성)
+@"
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/job_scheduler
+SECRET_KEY=your-secret-key-change-this
+DEBUG=true
+DEFAULT_ADMIN_USERNAME=admin
+DEFAULT_ADMIN_PASSWORD=admin123
+DEFAULT_ADMIN_EMAIL=admin@jobscheduler.local
+CORS_ORIGINS=["http://localhost:5173"]
+"@ | Out-File -Encoding utf8 .env
+
+# 서버 실행 (DB 테이블 자동 생성됨)
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+> **Windows 참고사항**:
+> - PowerShell 실행 정책 오류 시: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` 실행
+> - `psycopg2-binary` 설치 실패 시: [Visual C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) 설치 필요
+> - `pymssql` 설치 실패 시 무시 가능 (MSSQL 데이터소스 미사용 시)
+</details>
 
 > 서버 첫 실행 시 `init_db()`가 호출되어 모든 테이블이 자동 생성되고, 기본 admin 계정이 만들어집니다.
+
+---
 
 ### 1-3. Frontend 설정
 
@@ -91,6 +157,10 @@ cd frontend
 npm install
 npm run dev   # http://localhost:5173
 ```
+
+> Windows에서도 동일합니다. PowerShell 또는 명령 프롬프트에서 실행하세요.
+
+---
 
 ### 1-4. 접속
 
