@@ -101,7 +101,7 @@ async def run_workflow(
             return
 
         run.status = "running"
-        run.started_at = datetime.utcnow()
+        run.started_at = datetime.now(timezone.utc)
         db.commit()
 
         await _broadcast("workflow_run_update", {
@@ -127,7 +127,7 @@ async def run_workflow(
         run = db.query(WorkflowRun).filter(WorkflowRun.id == workflow_run_id).first()
         if run:
             run.status = final_status
-            run.finished_at = datetime.utcnow()
+            run.finished_at = datetime.now(timezone.utc)
             if run.started_at:
                 run.duration_ms = int((run.finished_at - run.started_at).total_seconds() * 1000)
             db.commit()
@@ -265,7 +265,7 @@ async def _execute_node(
         status="running",
         input_data=full_input,
         execution_order=execution_order,
-        started_at=datetime.utcnow(),
+        started_at=datetime.now(timezone.utc),
     )
     db.add(node_run)
     db.commit()
@@ -278,12 +278,12 @@ async def _execute_node(
         "status": "running",
     })
 
-    started = datetime.utcnow()
+    started = datetime.now(timezone.utc)
     try:
         module = db.query(StepModule).filter(StepModule.id == module_id).first() if module_id else None
         output = await _route_executor(node_type, module, full_input, nd)
 
-        finished = datetime.utcnow()
+        finished = datetime.now(timezone.utc)
         duration_ms = int((finished - started).total_seconds() * 1000)
         output_dict = output if isinstance(output, dict) else {"result": output}
 
@@ -313,7 +313,7 @@ async def _execute_node(
 
     except Exception as exc:
         db.rollback()  # Clear any pending rollback state
-        finished = datetime.utcnow()
+        finished = datetime.now(timezone.utc)
         duration_ms = int((finished - started).total_seconds() * 1000)
         node_run = db.merge(node_run)
         node_run.status = "failed"

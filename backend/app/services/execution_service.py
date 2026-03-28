@@ -3,6 +3,7 @@ import csv
 import io
 import json
 import os
+import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -57,8 +58,10 @@ _running_processes: dict[str, asyncio.subprocess.Process] = {}
 
 async def run_job(
     job_id: str, run_id: str, code: str, timeout: int, env_vars: dict | None = None,
-    python_path: str = "python3",
+    python_path: str | None = None,
 ):
+    if python_path is None:
+        python_path = sys.executable
     """Execute a Python job in a subprocess with real-time streaming output.
 
     Key design: DB writes are synchronous on the event loop thread (safe for
@@ -219,7 +222,7 @@ async def run_job(
                         "system", "info",
                         f"Scheduling retry {run.attempt_number + 1}/{job.max_retries}"
                     )
-                    asyncio.get_event_loop().call_later(
+                    asyncio.get_running_loop().call_later(
                         job.retry_delay_seconds,
                         lambda: asyncio.ensure_future(
                             _create_retry_run(
@@ -254,7 +257,7 @@ async def run_job(
                 if webhook_url:
                     from app.services.notification_service import should_notify, send_webhook_notification
                     if should_notify(notify_on, run.status):
-                        await asyncio.get_event_loop().run_in_executor(
+                        await asyncio.get_running_loop().run_in_executor(
                             None,
                             lambda: send_webhook_notification(
                                 webhook_url=webhook_url,
@@ -326,7 +329,7 @@ async def _maybe_save_to_datasource(
                 from app.services.datasource_service import save_run_results_to_datasource
                 save_run_results_to_datasource(ds, job_obj, run, logs_for_export)
 
-            await asyncio.get_event_loop().run_in_executor(None, _do_save_logs)
+            await asyncio.get_running_loop().run_in_executor(None, _do_save_logs)
 
             line_counter[0] += 1
             db.add(JobLog(
@@ -344,7 +347,7 @@ async def _maybe_save_to_datasource(
                 from app.services.datasource_service import insert_rows_to_table
                 return insert_rows_to_table(ds, target_table, data_rows, write_mode, upsert_key)
 
-            inserted = await asyncio.get_event_loop().run_in_executor(None, _do_insert)
+            inserted = await asyncio.get_running_loop().run_in_executor(None, _do_insert)
 
             mode_label = {"append": "Inserted", "replace": "Replaced", "upsert": "Upserted"}.get(write_mode, "Inserted")
             line_counter[0] += 1

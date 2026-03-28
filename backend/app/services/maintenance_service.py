@@ -7,7 +7,7 @@ Maintenance Service: Automated cleanup operations.
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from app.database import SessionLocal
 from app.models.job_run import JobRun
@@ -24,7 +24,7 @@ class MaintenanceService:
 
     async def cleanup_history(self, retention_days: int = LOG_RETENTION_DAYS) -> dict:
         """Delete job runs/logs AND workflow runs/node-runs older than retention_days."""
-        cutoff = datetime.utcnow() - timedelta(days=retention_days)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
         db = SessionLocal()
         try:
             # ── Job runs + logs ──────────────────────────────────────────────
@@ -102,7 +102,7 @@ class MaintenanceService:
             for run in orphans:
                 run.status = "failed"
                 run.error_message = "Server restarted while job was running"
-                run.finished_at = datetime.utcnow()
+                run.finished_at = datetime.now(timezone.utc)
                 count += 1
 
             # Also recover orphaned workflow runs
@@ -113,7 +113,7 @@ class MaintenanceService:
             for wr in wf_orphans:
                 wr.status = "failed"
                 wr.error_message = "Server restarted while workflow was running"
-                wr.finished_at = datetime.utcnow()
+                wr.finished_at = datetime.now(timezone.utc)
                 count += 1
 
             if count:

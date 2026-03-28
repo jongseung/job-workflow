@@ -14,12 +14,29 @@ import asyncio
 import hashlib
 import logging
 import shutil
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 VENV_INSTALL_TIMEOUT = 300  # 5 minutes
+
+_IS_WINDOWS = sys.platform == "win32"
+
+
+def _venv_python(venv_path: Path) -> Path:
+    """Return path to python executable inside a venv (cross-platform)."""
+    if _IS_WINDOWS:
+        return venv_path / "Scripts" / "python.exe"
+    return venv_path / "bin" / "python"
+
+
+def _venv_pip(venv_path: Path) -> Path:
+    """Return path to pip executable inside a venv (cross-platform)."""
+    if _IS_WINDOWS:
+        return venv_path / "Scripts" / "pip.exe"
+    return venv_path / "bin" / "pip"
 
 
 class VenvManager:
@@ -38,19 +55,19 @@ class VenvManager:
         return hashlib.sha256(normalized.encode()).hexdigest()[:16]
 
     def _get_python_path(self, venv_dir: Path) -> str:
-        return str(venv_dir / "venv" / "bin" / "python")
+        return str(_venv_python(venv_dir / "venv"))
 
     async def ensure_venv(self, requirements: str | None) -> str:
         """Ensure venv exists for requirements. Returns python executable path."""
         if not requirements or not requirements.strip():
-            return "python3"
+            return sys.executable
 
         req_hash = self._compute_hash(requirements)
         venv_dir = self.cache_dir / req_hash
         python_path = self._get_python_path(venv_dir)
 
         # Cache hit
-        if venv_dir.exists() and (venv_dir / "venv" / "bin" / "python").exists():
+        if venv_dir.exists() and _venv_python(venv_dir / "venv").exists():
             self._touch_last_used(venv_dir)
             logger.info(f"venv cache hit: {req_hash}")
             return python_path
@@ -59,7 +76,7 @@ class VenvManager:
         if req_hash in self._creating:
             logger.info(f"Waiting for venv creation: {req_hash}")
             await self._creating[req_hash].wait()
-            if (venv_dir / "venv" / "bin" / "python").exists():
+            if _venv_python(venv_dir / "venv").exists():
                 return python_path
             raise RuntimeError(f"venv creation failed for hash {req_hash}")
 
@@ -79,7 +96,7 @@ class VenvManager:
 
         # Step 1: python -m venv
         proc = await asyncio.create_subprocess_exec(
-            "python3", "-m", "venv", str(venv_path),
+            sys.executable, "-m", "venv", str(venv_path),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -93,7 +110,7 @@ class VenvManager:
         req_file.write_text(requirements.strip() + "\n")
 
         # Step 3: pip install
-        pip_path = venv_path / "bin" / "pip"
+        pip_path = _venv_pip(venv_path)
         proc = await asyncio.create_subprocess_exec(
             str(pip_path), "install", "-r", str(req_file),
             stdout=asyncio.subprocess.PIPE,
