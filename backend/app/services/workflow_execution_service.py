@@ -255,6 +255,7 @@ async def _execute_node(
     full_input = {**config, **resolved_input}
 
     # Create running record
+    started = datetime.now(timezone.utc)
     node_run = WorkflowNodeRun(
         id=str(uuid.uuid4()),
         workflow_run_id=workflow_run_id,
@@ -265,7 +266,7 @@ async def _execute_node(
         status="running",
         input_data=full_input,
         execution_order=execution_order,
-        started_at=datetime.now(timezone.utc),
+        started_at=started,
     )
     db.add(node_run)
     db.commit()
@@ -277,8 +278,6 @@ async def _execute_node(
         "node_type": node_type,
         "status": "running",
     })
-
-    started = datetime.now(timezone.utc)
     try:
         module = db.query(StepModule).filter(StepModule.id == module_id).first() if module_id else None
         output = await _route_executor(node_type, module, full_input, nd)
@@ -536,21 +535,19 @@ def _serialize_cell(cell):
 
 def _json_safe(obj):
     """Recursively convert non-JSON-serializable types."""
-    import json
-    try:
-        json.dumps(obj)
+    from decimal import Decimal
+    if obj is None or isinstance(obj, (bool, int, float, str)):
         return obj
-    except (TypeError, ValueError):
-        pass
     if isinstance(obj, dict):
         return {k: _json_safe(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
         return [_json_safe(v) for v in obj]
     if hasattr(obj, "isoformat"):
         return obj.isoformat()
-    from decimal import Decimal
     if isinstance(obj, Decimal):
         return int(obj) if obj == int(obj) else float(obj)
+    if isinstance(obj, bytes):
+        return obj.decode("utf-8", errors="replace")
     return str(obj)
 
 
@@ -578,7 +575,9 @@ async def _run_sql(module: StepModule, input_data: dict, node_data: dict) -> dic
         conn, _ = _get_connection(ds)
         try:
             cur = conn.cursor()
-            # Execute without positional params (user writes full query)
+            # Template substitution: replace {key} placeholders with input_data values
+            for k, v in input_data.items():
+                query = query.replace(f"{{{k}}}", str(v) if v is not None else "NULL")
             cur.execute(query)
             col_names = [d[0] for d in (cur.description or [])]
             rows = [
