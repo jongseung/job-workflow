@@ -31,14 +31,17 @@ async def run_subprocess(
     loop = asyncio.get_running_loop()
 
     def _run():
-        proc = subprocess.Popen(
-            list(args),
+        kwargs = dict(
             stdin=subprocess.PIPE if stdin_data is not None else None,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=env,
             cwd=cwd,
         )
+        if _IS_WINDOWS:
+            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+
+        proc = subprocess.Popen(list(args), **kwargs)
         try:
             stdout, stderr = proc.communicate(input=stdin_data, timeout=timeout)
         except subprocess.TimeoutExpired:
@@ -69,14 +72,23 @@ class StreamingProcess:
         self._process: subprocess.Popen | None = None
 
     def start(self):
-        self._process = subprocess.Popen(
-            self._args,
+        kwargs = dict(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             stdin=subprocess.DEVNULL,
             env=self._env,
             cwd=self._cwd,
         )
+        # Windows: create new process group so kill() terminates entire tree
+        if _IS_WINDOWS:
+            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+
+        self._process = subprocess.Popen(self._args, **kwargs)
+
+        if self._process.returncode is not None:
+            raise RuntimeError(
+                f"Process failed to start (exit code {self._process.returncode})"
+            )
 
     @property
     def process(self) -> subprocess.Popen | None:

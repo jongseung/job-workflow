@@ -73,23 +73,38 @@ class VenvManager:
         venv_dir = self.cache_dir / req_hash
         python_path = self._get_python_path(venv_dir)
 
+        # Windows MAX_PATH check (260 chars default limit)
+        if _IS_WINDOWS:
+            longest = venv_dir / "venv" / "Scripts" / "python.exe"
+            if len(str(longest)) > 250:
+                raise RuntimeError(
+                    f"Venv path too long for Windows ({len(str(longest))} chars). "
+                    f"Set a shorter VENV_CACHE_DIR in .env"
+                )
+
         # Cache hit
         if venv_dir.exists() and _venv_python(venv_dir / "venv").exists():
             self._touch_last_used(venv_dir)
             logger.info(f"venv cache hit: {req_hash}")
             return python_path
 
-        # Concurrent creation guard
+        # Concurrent creation guard — wait if another task is already creating
         if req_hash in self._creating:
             logger.info(f"Waiting for venv creation: {req_hash}")
             await self._creating[req_hash].wait()
+            # Double-check after wait
             if _venv_python(venv_dir / "venv").exists():
+                self._touch_last_used(venv_dir)
                 return python_path
             raise RuntimeError(f"venv creation failed for hash {req_hash}")
 
         event = asyncio.Event()
         self._creating[req_hash] = event
         try:
+            # Double-check after acquiring lock (another task may have just finished)
+            if venv_dir.exists() and _venv_python(venv_dir / "venv").exists():
+                self._touch_last_used(venv_dir)
+                return python_path
             await self._create_venv(venv_dir, requirements, req_hash)
             return python_path
         finally:

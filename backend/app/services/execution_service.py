@@ -92,10 +92,16 @@ async def run_job(
         finally:
             os.close(tmp_fd)
 
-        # Build environment
+        # Build environment (preserve critical Windows system vars)
         env = os.environ.copy()
         if env_vars:
+            if sys.platform == "win32":
+                # Protect vars required for Windows subprocess to function
+                _protected = {"SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT", "TEMP", "TMP"}
+                env_vars = {k: v for k, v in env_vars.items() if k.upper() not in _protected}
             env.update(env_vars)
+        # Ensure subprocess uses UTF-8 output (critical for non-ASCII on Windows)
+        env.setdefault("PYTHONIOENCODING", "utf-8")
 
         from app.websocket.manager import manager
 
@@ -281,14 +287,15 @@ async def run_job(
                 db.commit()
         finally:
             _running_processes.pop(run_id, None)
-            # Windows may hold file handles briefly after process exit; retry deletion
-            for _attempt in range(3):
+            # Windows holds file handles longer after process exit; retry with backoff
+            _retries = 8 if sys.platform == "win32" else 3
+            for _attempt in range(_retries):
                 try:
                     code_file.unlink(missing_ok=True)
                     break
                 except PermissionError:
                     import time
-                    time.sleep(0.2)
+                    time.sleep(0.3 * (_attempt + 1))  # 0.3, 0.6, 0.9 ...
                 except Exception:
                     break
     finally:

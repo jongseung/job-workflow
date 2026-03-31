@@ -1,5 +1,10 @@
+import asyncio
 import json
 from fastapi import WebSocket
+
+# Timeout for individual WebSocket send operations (seconds).
+# Prevents a slow/stalled client from blocking the event loop during broadcast.
+WS_SEND_TIMEOUT = 5
 
 
 class ConnectionManager:
@@ -17,7 +22,10 @@ class ConnectionManager:
 
     async def disconnect_logs(self, run_id: str, websocket: WebSocket):
         if run_id in self._log_connections:
-            self._log_connections[run_id].remove(websocket)
+            try:
+                self._log_connections[run_id].remove(websocket)
+            except ValueError:
+                pass
             if not self._log_connections[run_id]:
                 del self._log_connections[run_id]
 
@@ -26,31 +34,43 @@ class ConnectionManager:
         self._event_connections.append(websocket)
 
     async def disconnect_events(self, websocket: WebSocket):
-        if websocket in self._event_connections:
+        try:
             self._event_connections.remove(websocket)
+        except ValueError:
+            pass
+
+    async def _safe_send(self, ws: WebSocket, message: dict) -> bool:
+        """Send JSON to a WebSocket with timeout. Returns False if failed."""
+        try:
+            await asyncio.wait_for(ws.send_json(message), timeout=WS_SEND_TIMEOUT)
+            return True
+        except (asyncio.TimeoutError, Exception):
+            return False
 
     async def broadcast(self, run_id: str, message: dict):
         """Broadcast log message to all connections watching a specific run."""
         connections = self._log_connections.get(run_id, [])
         dead = []
         for ws in connections:
-            try:
-                await ws.send_json(message)
-            except Exception:
+            if not await self._safe_send(ws, message):
                 dead.append(ws)
         for ws in dead:
-            connections.remove(ws)
+            try:
+                connections.remove(ws)
+            except ValueError:
+                pass
 
     async def broadcast_event(self, message: dict):
         """Broadcast event to all global event connections."""
         dead = []
         for ws in self._event_connections:
-            try:
-                await ws.send_json(message)
-            except Exception:
+            if not await self._safe_send(ws, message):
                 dead.append(ws)
         for ws in dead:
-            self._event_connections.remove(ws)
+            try:
+                self._event_connections.remove(ws)
+            except ValueError:
+                pass
 
 
 manager = ConnectionManager()

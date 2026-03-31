@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -13,10 +15,17 @@ from app.scheduler.engine import (
     register_log_cleanup,
 )
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ── Startup ──────────────────────────────────────────────────────────────
+    logger.info(f"Platform: {sys.platform}")
+    loop = asyncio.get_running_loop()
+    logger.info(f"Event loop: {type(loop).__name__}")
+    if sys.platform == "win32":
+        logger.info("Windows detected — using subprocess.Popen + threading for process execution")
     init_db()
 
     settings.JOBS_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
