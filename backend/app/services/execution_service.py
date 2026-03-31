@@ -281,10 +281,16 @@ async def run_job(
                 db.commit()
         finally:
             _running_processes.pop(run_id, None)
-            try:
-                code_file.unlink(missing_ok=True)
-            except Exception:
-                pass
+            # Windows may hold file handles briefly after process exit; retry deletion
+            for _attempt in range(3):
+                try:
+                    code_file.unlink(missing_ok=True)
+                    break
+                except PermissionError:
+                    import time
+                    time.sleep(0.2)
+                except Exception:
+                    break
     finally:
         db.close()
 

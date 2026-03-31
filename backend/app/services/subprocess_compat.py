@@ -114,7 +114,8 @@ class StreamingProcess:
             """Blocking reader running in a thread."""
             try:
                 for raw_line in iter(stream.readline, b""):
-                    line = raw_line.decode("utf-8", errors="replace").rstrip("\n")
+                    # Strip both \r\n (Windows) and \n (Unix)
+                    line = raw_line.decode("utf-8", errors="replace").rstrip("\r\n")
                     loop.call_soon_threadsafe(queue.put_nowait, line)
             except (ValueError, OSError):
                 pass  # Stream closed

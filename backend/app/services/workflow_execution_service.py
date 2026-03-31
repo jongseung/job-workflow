@@ -426,10 +426,16 @@ async def _run_python_code(code: str, input_data: dict) -> dict:
                 pass
         return {"stdout": raw}
     finally:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
+        # Windows may hold file handles briefly after process exit; retry deletion
+        for _attempt in range(3):
+            try:
+                os.unlink(tmp_path)
+                break
+            except PermissionError:
+                import time
+                time.sleep(0.2)
+            except OSError:
+                break
 
 
 async def _run_python(module: StepModule, input_data: dict, node_data: dict) -> dict:

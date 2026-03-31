@@ -55,7 +55,14 @@ class VenvManager:
         return hashlib.sha256(normalized.encode()).hexdigest()[:16]
 
     def _get_python_path(self, venv_dir: Path) -> str:
-        return str(_venv_python(venv_dir / "venv"))
+        p = _venv_python(venv_dir / "venv")
+        # On Windows, also check for python.exe without .exe extension match
+        if not p.exists() and _IS_WINDOWS:
+            # Fallback: try without .exe (some venv tools create differently)
+            alt = venv_dir / "venv" / "Scripts" / "python"
+            if alt.exists():
+                return str(alt)
+        return str(p)
 
     async def ensure_venv(self, requirements: str | None) -> str:
         """Ensure venv exists for requirements. Returns python executable path."""
