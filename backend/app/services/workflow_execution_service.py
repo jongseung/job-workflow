@@ -395,34 +395,36 @@ async def _run_python_code(code: str, input_data: dict) -> dict:
     try:
         os.write(tmp_fd, wrapper.encode())
         os.close(tmp_fd)
-        proc = await asyncio.create_subprocess_exec(
+
+        from app.services.subprocess_compat import run_subprocess
+
+        _, stdout, stderr, returncode = await run_subprocess(
             sys.executable, "-u", tmp_path,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await asyncio.wait_for(
-            proc.communicate(input=json.dumps(input_data).encode()),
+            stdin_data=json.dumps(input_data).encode(),
             timeout=300,
         )
-        if proc.returncode != 0:
-            raise RuntimeError(f"Python executor error: {stderr.decode()[:500]}")
+        if returncode != 0:
+            err_msg = stderr.decode("utf-8", errors="replace")[:500] if stderr else "Unknown error"
+            if returncode == -1:
+                raise RuntimeError(f"Python executor timed out after 300s")
+            raise RuntimeError(f"Python executor error: {err_msg}")
 
         # Parse __OUTPUT__: line
-        for line in stdout.decode().splitlines():
+        out_text = stdout.decode("utf-8", errors="replace") if stdout else ""
+        for line in out_text.splitlines():
             if line.startswith("__OUTPUT__:"):
                 try:
                     return json.loads(line[len("__OUTPUT__:"):])
                 except json.JSONDecodeError:
                     pass
         # Fallback: try parse all stdout as JSON
-        raw = stdout.decode().strip()
+        raw = out_text.strip()
         if raw:
             try:
                 return json.loads(raw)
             except json.JSONDecodeError:
                 pass
-        return {"stdout": stdout.decode().strip()}
+        return {"stdout": raw}
     finally:
         try:
             os.unlink(tmp_path)

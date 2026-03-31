@@ -3,6 +3,7 @@ import csv
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 from datetime import datetime, timezone
@@ -53,7 +54,7 @@ def _ensure_utc(dt: datetime | None) -> datetime | None:
 
 
 # Global dict to track running processes for cancellation
-_running_processes: dict[str, asyncio.subprocess.Process] = {}
+_running_processes: dict[str, subprocess.Popen] = {}
 
 
 async def run_job(
@@ -135,28 +136,21 @@ async def run_job(
         # Collect data rows for target-table insertion
         data_rows: list[dict] = []
 
-        async def _read_stream(stream: asyncio.StreamReader, stream_name: str, level: str):
-            """Read lines from subprocess stream and emit them as they arrive."""
-            while True:
-                raw = await stream.readline()
-                if not raw:
-                    # EOF — process stream closed
-                    break
-                line = raw.decode("utf-8", errors="replace").rstrip("\n")
+        async def _on_stdout(line: str):
+            """Process a single stdout line."""
+            if line.startswith(DATA_LINE_PREFIX):
+                payload = line[len(DATA_LINE_PREFIX):]
+                parsed = _parse_data_line(payload, output_format)
+                if parsed is not None:
+                    data_rows.append(parsed)
+                    await _emit("stdout", "debug", f"[DATA] {payload[:200]}")
+                else:
+                    await _emit("stdout", "warning", f"[DATA PARSE ERROR] {payload[:200]}")
+            else:
+                await _emit("stdout", "info", line)
 
-                # Check for data-line prefix (only on stdout)
-                if stream_name == "stdout" and line.startswith(DATA_LINE_PREFIX):
-                    payload = line[len(DATA_LINE_PREFIX):]
-                    parsed = _parse_data_line(payload, output_format)
-                    if parsed is not None:
-                        data_rows.append(parsed)
-                        await _emit(stream_name, "debug", f"[DATA] {payload[:200]}")
-                        continue
-                    else:
-                        await _emit(stream_name, "warning", f"[DATA PARSE ERROR] {payload[:200]}")
-                        continue
-
-                await _emit(stream_name, level, line)
+        async def _on_stderr(line: str):
+            await _emit("stderr", "error", line)
 
         await _emit("system", "info", "Starting job execution...")
 
@@ -164,31 +158,22 @@ async def run_job(
         exit_code = -1
 
         try:
-            process = await asyncio.create_subprocess_exec(
-                python_path,
-                "-u",  # Force unbuffered Python I/O
-                str(code_file),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+            from app.services.subprocess_compat import StreamingProcess
+
+            sp = StreamingProcess(
+                python_path, "-u", str(code_file),
                 env=env,
                 cwd=tempfile.gettempdir(),
             )
-            _running_processes[run_id] = process
+            sp.start()
+            _running_processes[run_id] = sp.process
 
             try:
-                await asyncio.wait_for(
-                    asyncio.gather(
-                        _read_stream(process.stdout, "stdout", "info"),
-                        _read_stream(process.stderr, "stderr", "error"),
-                    ),
-                    timeout=timeout,
-                )
+                await sp.read_streams(_on_stdout, _on_stderr, timeout=timeout)
             except asyncio.TimeoutError:
-                process.kill()
-                await process.wait()
                 timed_out = True
 
-            exit_code = process.returncode if process.returncode is not None else -1
+            exit_code = sp.returncode if sp.returncode is not None else -1
             finished_at = datetime.now(timezone.utc)
 
             if timed_out:
@@ -386,7 +371,10 @@ async def cancel_run(run_id: str) -> bool:
     if process and process.returncode is None:
         process.terminate()
         try:
-            await asyncio.wait_for(process.wait(), timeout=5)
+            loop = asyncio.get_running_loop()
+            await asyncio.wait_for(
+                loop.run_in_executor(None, process.wait), timeout=5
+            )
         except asyncio.TimeoutError:
             process.kill()
         return True

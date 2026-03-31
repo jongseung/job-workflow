@@ -94,16 +94,17 @@ class VenvManager:
         venv_dir.mkdir(parents=True, exist_ok=True)
         venv_path = venv_dir / "venv"
 
+        from app.services.subprocess_compat import run_subprocess
+
         # Step 1: python -m venv
-        proc = await asyncio.create_subprocess_exec(
+        _, stdout, stderr, rc = await run_subprocess(
             sys.executable, "-m", "venv", str(venv_path),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            timeout=60,
         )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
-        if proc.returncode != 0:
+        if rc != 0:
             shutil.rmtree(venv_dir, ignore_errors=True)
-            raise RuntimeError(f"venv creation failed: {stderr.decode()[:500]}")
+            err = stderr.decode("utf-8", errors="replace")[:500] if stderr else "Unknown error"
+            raise RuntimeError(f"venv creation failed: {err}")
 
         # Step 2: Write requirements.txt
         req_file = venv_dir / "requirements.txt"
@@ -111,24 +112,18 @@ class VenvManager:
 
         # Step 3: pip install
         pip_path = _venv_pip(venv_path)
-        proc = await asyncio.create_subprocess_exec(
+        _, stdout, stderr, rc = await run_subprocess(
             str(pip_path), "install", "-r", str(req_file),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            timeout=VENV_INSTALL_TIMEOUT,
         )
-        try:
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=VENV_INSTALL_TIMEOUT
-            )
-        except asyncio.TimeoutError:
-            proc.kill()
+        if rc == -1:
             shutil.rmtree(venv_dir, ignore_errors=True)
             raise RuntimeError(f"pip install timed out after {VENV_INSTALL_TIMEOUT}s")
 
-        if proc.returncode != 0:
-            error_msg = stderr.decode()[-500:]
+        if rc != 0:
+            error_msg = stderr.decode("utf-8", errors="replace")[-500:] if stderr else "Unknown error"
             shutil.rmtree(venv_dir, ignore_errors=True)
-            raise RuntimeError(f"pip install failed (exit {proc.returncode}):\n{error_msg}")
+            raise RuntimeError(f"pip install failed (exit {rc}):\n{error_msg}")
 
         # Step 4: Metadata
         (venv_dir / "created_at").write_text(datetime.now(timezone.utc).isoformat())
