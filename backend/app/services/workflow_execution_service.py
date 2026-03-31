@@ -472,15 +472,13 @@ async def _run_http(module: StepModule, input_data: dict, node_data: dict) -> di
     for k, v in input_data.items():
         url = url.replace(f"{{{k}}}", str(v))
 
+    # SSL verification: use config setting (supports corporate/Windows environments)
+    from app.config import settings as _settings
+    ssl_verify = _settings.HTTP_SSL_VERIFY
+
     try:
         import httpx
-        # Use certifi for SSL certs (macOS Python.app doesn't bundle system certs)
-        try:
-            import certifi
-            _ssl_verify: str | bool = certifi.where()
-        except ImportError:
-            _ssl_verify = True
-        async with httpx.AsyncClient(timeout=30, verify=_ssl_verify) as client:
+        async with httpx.AsyncClient(timeout=30, verify=ssl_verify) as client:
             if method in ("POST", "PUT", "PATCH"):
                 resp = await client.request(method, url, json=body, headers=headers)
             else:
@@ -492,11 +490,16 @@ async def _run_http(module: StepModule, input_data: dict, node_data: dict) -> di
                 result = {"status": resp.status_code, "body": resp.text}
     except ImportError:
         import urllib.request, ssl
-        try:
-            import certifi as _certifi
-            _ssl_ctx = ssl.create_default_context(cafile=_certifi.where())
-        except ImportError:
+        if ssl_verify:
+            try:
+                import certifi as _certifi
+                _ssl_ctx = ssl.create_default_context(cafile=_certifi.where())
+            except ImportError:
+                _ssl_ctx = ssl.create_default_context()
+        else:
             _ssl_ctx = ssl.create_default_context()
+            _ssl_ctx.check_hostname = False
+            _ssl_ctx.verify_mode = ssl.CERT_NONE
         payload = json.dumps(body).encode()
         req = urllib.request.Request(url, payload, {**headers, "Content-Type": "application/json"})
         req.get_method = lambda: method

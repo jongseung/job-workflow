@@ -49,8 +49,11 @@ def get_stats(
             db_name = settings.DATABASE_URL.split("/")[-1].split("?")[0]
             db_size = db.execute(text(f"SELECT pg_database_size('{db_name}')")).scalar() or 0
         else:
-            db_path = settings.DATABASE_URL.replace("sqlite:///", "")
-            db_size = os.path.getsize(db_path) if os.path.exists(db_path) else 0
+            # SQLite: handle both unix (sqlite:///path) and windows (sqlite:///C:/path)
+            from urllib.parse import urlparse
+            parsed = urlparse(settings.DATABASE_URL)
+            db_path = parsed.path.lstrip("/") if os.name == "nt" else parsed.path
+            db_size = os.path.getsize(db_path) if db_path and os.path.exists(db_path) else 0
     except Exception:
         db_size = 0
 

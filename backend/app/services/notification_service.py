@@ -39,11 +39,13 @@ def send_webhook_notification(
     }
 
     try:
+        from app.config import settings as _settings
         resp = requests.post(
             webhook_url,
             json=payload,
             headers={"Content-Type": "application/json", "User-Agent": "JobScheduler/1.0"},
             timeout=10,
+            verify=_settings.HTTP_SSL_VERIFY,
         )
         if resp.status_code < 400:
             logger.info(f"Webhook sent to {webhook_url} for job '{job_name}' (status={status})")

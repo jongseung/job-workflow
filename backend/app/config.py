@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     RETENTION_DAYS: int = 30
     QUEUE_CHECK_INTERVAL: int = 5
 
+    # HTTP / SSL
+    HTTP_SSL_VERIFY: bool = False  # Set True in production with proper certs
+
     CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
     class Config:
