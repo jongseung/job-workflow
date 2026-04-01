@@ -228,15 +228,18 @@ async def run_job(
                 job = db.query(Job).filter(Job.id == job_id).first()
                 if job and run.attempt_number < job.max_retries:
                     run.status = "retrying"
+                    _next_attempt = run.attempt_number + 1
+                    _retry_delay = job.retry_delay_seconds
                     await _emit(
                         "system", "info",
-                        f"Scheduling retry {run.attempt_number + 1}/{job.max_retries}"
+                        f"Scheduling retry {_next_attempt}/{job.max_retries}"
                     )
+                    # Capture variables explicitly to avoid stale closure references
                     asyncio.get_running_loop().call_later(
-                        job.retry_delay_seconds,
-                        lambda: asyncio.ensure_future(
-                            _create_retry_run(
-                                job_id, run.attempt_number + 1, code, timeout, env_vars
+                        _retry_delay,
+                        lambda _jid=job_id, _att=_next_attempt, _c=code, _t=timeout, _e=env_vars: (
+                            asyncio.ensure_future(
+                                _create_retry_run(_jid, _att, _c, _t, _e)
                             )
                         ),
                     )
@@ -307,14 +310,14 @@ async def run_job(
         finally:
             _running_processes.pop(run_id, None)
             # Windows holds file handles longer after process exit; retry with backoff
+            # Use asyncio.sleep to avoid blocking the event loop
             _retries = 8 if sys.platform == "win32" else 3
             for _attempt in range(_retries):
                 try:
                     code_file.unlink(missing_ok=True)
                     break
                 except PermissionError:
-                    import time
-                    time.sleep(0.3 * (_attempt + 1))  # 0.3, 0.6, 0.9 ...
+                    await asyncio.sleep(0.3 * (_attempt + 1))
                 except Exception:
                     break
     finally:

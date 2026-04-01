@@ -13,7 +13,8 @@ engine = create_engine(
     max_overflow=10 if _is_win else 20,
     pool_pre_ping=True,
     pool_recycle=1800,  # Recycle stale connections every 30 min
-    echo=settings.DEBUG,
+    pool_timeout=30,    # Wait max 30s for a connection from pool
+    echo=False,         # SQL logging disabled for performance (set DEBUG=True in .env if needed)
 )
 
 

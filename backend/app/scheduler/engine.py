@@ -11,6 +11,18 @@ from app.database import SessionLocal
 
 logger = logging.getLogger(__name__)
 
+# Workflow concurrency limiter — prevents resource exhaustion when many
+# workflows fire simultaneously (e.g. 10 workflows on same cron schedule).
+_workflow_semaphore: asyncio.Semaphore | None = None
+MAX_CONCURRENT_WORKFLOWS = 3
+
+
+def _get_workflow_semaphore() -> asyncio.Semaphore:
+    global _workflow_semaphore
+    if _workflow_semaphore is None:
+        _workflow_semaphore = asyncio.Semaphore(MAX_CONCURRENT_WORKFLOWS)
+    return _workflow_semaphore
+
 scheduler: AsyncIOScheduler | None = None
 
 
@@ -154,8 +166,16 @@ async def execute_scheduled_workflow(workflow_id: str):
     finally:
         db.close()
 
-    # Fire-and-forget in the same event loop
-    asyncio.ensure_future(run_workflow(run_id, canvas, {}))
+    # Run with concurrency limiter to prevent resource exhaustion
+    async def _guarded_run():
+        sem = _get_workflow_semaphore()
+        async with sem:
+            try:
+                await run_workflow(run_id, canvas, {})
+            except Exception as exc:
+                logger.error(f"Workflow {workflow_id} run {run_id} failed: {exc}")
+
+    asyncio.ensure_future(_guarded_run())
     logger.info(f"Scheduled workflow {workflow_id} fired → run {run_id}")
 
 

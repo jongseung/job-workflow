@@ -47,13 +47,21 @@ class ConnectionManager:
         except (asyncio.TimeoutError, Exception):
             return False
 
+    async def cleanup_run(self, run_id: str):
+        """Remove all connections for a completed run to prevent memory leaks."""
+        self._log_connections.pop(run_id, None)
+
     async def broadcast(self, run_id: str, message: dict):
         """Broadcast log message to all connections watching a specific run."""
         connections = self._log_connections.get(run_id, [])
-        dead = []
-        for ws in connections:
-            if not await self._safe_send(ws, message):
-                dead.append(ws)
+        if not connections:
+            return
+        # Parallel send to all clients — O(1) wall-time instead of O(n)
+        results = await asyncio.gather(
+            *[self._safe_send(ws, message) for ws in connections],
+            return_exceptions=True,
+        )
+        dead = [ws for ws, ok in zip(connections, results) if ok is not True]
         for ws in dead:
             try:
                 connections.remove(ws)
@@ -62,10 +70,13 @@ class ConnectionManager:
 
     async def broadcast_event(self, message: dict):
         """Broadcast event to all global event connections."""
-        dead = []
-        for ws in self._event_connections:
-            if not await self._safe_send(ws, message):
-                dead.append(ws)
+        if not self._event_connections:
+            return
+        results = await asyncio.gather(
+            *[self._safe_send(ws, message) for ws in self._event_connections],
+            return_exceptions=True,
+        )
+        dead = [ws for ws, ok in zip(self._event_connections, results) if ok is not True]
         for ws in dead:
             try:
                 self._event_connections.remove(ws)

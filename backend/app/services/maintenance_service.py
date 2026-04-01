@@ -23,65 +23,77 @@ LOG_RETENTION_DAYS = 3
 class MaintenanceService:
 
     async def cleanup_history(self, retention_days: int = LOG_RETENTION_DAYS) -> dict:
-        """Delete job runs/logs AND workflow runs/node-runs older than retention_days."""
+        """Delete job runs/logs AND workflow runs/node-runs older than retention_days.
+
+        Processes in batches of BATCH_SIZE to prevent memory issues when
+        thousands of old runs accumulate.
+        """
+        BATCH_SIZE = 500
         cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
         db = SessionLocal()
+        total_job_runs = 0
+        total_job_logs = 0
+        total_wf_runs = 0
+        total_node_runs = 0
+
         try:
-            # ── Job runs + logs ──────────────────────────────────────────────
-            old_job_runs = db.query(JobRun).filter(
-                JobRun.created_at < cutoff,
-                JobRun.status.in_(["success", "failed", "cancelled", "skipped"]),
-            ).all()
+            # ── Job runs + logs (batched) ────────────────────────────────────
+            while True:
+                batch_ids = [
+                    r.id for r in db.query(JobRun.id).filter(
+                        JobRun.created_at < cutoff,
+                        JobRun.status.in_(["success", "failed", "cancelled", "skipped"]),
+                    ).limit(BATCH_SIZE).all()
+                ]
+                if not batch_ids:
+                    break
 
-            job_run_ids = [r.id for r in old_job_runs]
-            deleted_job_logs = 0
-            deleted_job_runs = 0
-
-            if job_run_ids:
-                deleted_job_logs = db.query(JobLog).filter(
-                    JobLog.job_run_id.in_(job_run_ids)
+                total_job_logs += db.query(JobLog).filter(
+                    JobLog.job_run_id.in_(batch_ids)
                 ).delete(synchronize_session=False)
 
-                deleted_job_runs = db.query(JobRun).filter(
-                    JobRun.id.in_(job_run_ids)
+                total_job_runs += db.query(JobRun).filter(
+                    JobRun.id.in_(batch_ids)
                 ).delete(synchronize_session=False)
 
-            # ── Workflow runs + node runs ────────────────────────────────────
-            old_wf_runs = db.query(WorkflowRun).filter(
-                WorkflowRun.created_at < cutoff,
-                WorkflowRun.status.in_(["success", "failed", "cancelled", "skipped"]),
-            ).all()
+                db.commit()
 
-            wf_run_ids = [r.id for r in old_wf_runs]
-            deleted_node_runs = 0
-            deleted_wf_runs = 0
+            # ── Workflow runs + node runs (batched) ──────────────────────────
+            while True:
+                batch_ids = [
+                    r.id for r in db.query(WorkflowRun.id).filter(
+                        WorkflowRun.created_at < cutoff,
+                        WorkflowRun.status.in_(["success", "failed", "cancelled", "skipped"]),
+                    ).limit(BATCH_SIZE).all()
+                ]
+                if not batch_ids:
+                    break
 
-            if wf_run_ids:
-                deleted_node_runs = db.query(WorkflowNodeRun).filter(
-                    WorkflowNodeRun.workflow_run_id.in_(wf_run_ids)
+                total_node_runs += db.query(WorkflowNodeRun).filter(
+                    WorkflowNodeRun.workflow_run_id.in_(batch_ids)
                 ).delete(synchronize_session=False)
 
-                deleted_wf_runs = db.query(WorkflowRun).filter(
-                    WorkflowRun.id.in_(wf_run_ids)
+                total_wf_runs += db.query(WorkflowRun).filter(
+                    WorkflowRun.id.in_(batch_ids)
                 ).delete(synchronize_session=False)
 
-            db.commit()
+                db.commit()
 
-            total_deleted = deleted_job_runs + deleted_job_logs + deleted_wf_runs + deleted_node_runs
-            if total_deleted > 0:
+            total = total_job_runs + total_job_logs + total_wf_runs + total_node_runs
+            if total > 0:
                 logger.info(
                     f"Cleanup (retention={retention_days}d): "
-                    f"job_runs={deleted_job_runs}, job_logs={deleted_job_logs}, "
-                    f"wf_runs={deleted_wf_runs}, wf_node_runs={deleted_node_runs}"
+                    f"job_runs={total_job_runs}, job_logs={total_job_logs}, "
+                    f"wf_runs={total_wf_runs}, wf_node_runs={total_node_runs}"
                 )
             else:
                 logger.debug(f"Cleanup: nothing to delete (retention={retention_days}d)")
 
             return {
-                "deleted_job_runs": deleted_job_runs,
-                "deleted_job_logs": deleted_job_logs,
-                "deleted_wf_runs": deleted_wf_runs,
-                "deleted_node_runs": deleted_node_runs,
+                "deleted_job_runs": total_job_runs,
+                "deleted_job_logs": total_job_logs,
+                "deleted_wf_runs": total_wf_runs,
+                "deleted_node_runs": total_node_runs,
             }
         except Exception as exc:
             db.rollback()

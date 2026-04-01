@@ -87,19 +87,19 @@ class WorkerPool:
         """Execute a job run within the worker pool.
 
         Returns True if execution started, False if rejected.
+        Uses atomic check-and-acquire to prevent race conditions.
         """
         # Check per-job lock first (cheap)
         if not await self._lock_manager.can_acquire(job_id, max_concurrent):
             return False
 
-        # Try non-blocking semaphore acquire
-        acquired = self._semaphore._value > 0
-        if not acquired:
-            return False
+        # Atomic semaphore check-and-acquire under lock to prevent race
+        async with self._active_lock:
+            if self._semaphore._value <= 0:
+                return False
+            await self._semaphore.acquire()
 
-        await self._semaphore.acquire()
-
-        # Double-check per-job lock after semaphore
+        # Per-job lock after global semaphore
         if not await self._lock_manager.acquire(job_id, max_concurrent):
             self._semaphore.release()
             return False
@@ -112,7 +112,7 @@ class WorkerPool:
             try:
                 await coro_factory(worker_id)
             except Exception as e:
-                logger.error(f"Worker {worker_id} error: {e}")
+                logger.error(f"Worker {worker_id} error for run {run_id}: {e}")
             finally:
                 await self._lock_manager.release(job_id)
                 self._semaphore.release()

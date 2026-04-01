@@ -189,7 +189,22 @@ class StreamingProcess:
         if self._process is None:
             return -1
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self._process.wait)
+        rc = await loop.run_in_executor(None, self._process.wait)
+        self._close_streams()
+        return rc
+
+    def _close_streams(self):
+        """Explicitly close stdout/stderr pipes to release OS handles.
+
+        Critical on Windows where orphaned handles prevent temp file deletion
+        and accumulate over many job runs.
+        """
+        for stream in (self._process.stdout, self._process.stderr):
+            if stream:
+                try:
+                    stream.close()
+                except OSError:
+                    pass
 
     def terminate(self):
         if self._process and self._process.returncode is None:

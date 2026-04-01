@@ -442,14 +442,14 @@ async def _run_python_code(code: str, input_data: dict) -> dict:
         return {"stdout": raw}
     finally:
         # Windows may hold file handles briefly after process exit; retry with backoff
+        # Use asyncio.sleep to avoid blocking the event loop during workflow execution
         _retries = 8 if sys.platform == "win32" else 3
         for _attempt in range(_retries):
             try:
                 os.unlink(tmp_path)
                 break
             except PermissionError:
-                import time
-                time.sleep(0.3 * (_attempt + 1))
+                await asyncio.sleep(0.3 * (_attempt + 1))
             except OSError:
                 break
 

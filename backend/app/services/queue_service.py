@@ -71,29 +71,24 @@ class QueueService:
         return db.query(JobRun).filter(JobRun.status == "queued").count()
 
     async def process_queue(self):
-        """Pick next queued run and attempt execution.
+        """Pick queued runs and dispatch them to the worker pool.
 
-        IMPORTANT: Session is opened and closed as quickly as possible
-        to avoid SQLite lock contention with other endpoints.
+        Processes up to MAX_BATCH_SIZE runs per cycle to prevent starvation
+        when many jobs trigger simultaneously (e.g. 10 jobs on same cron).
         """
         from app.services.worker_pool import get_worker_pool
         from app.services.venv_manager import get_venv_manager
         from app.services.execution_service import run_job
 
         pool = get_worker_pool()
+        MAX_BATCH_SIZE = pool.max_workers  # No point fetching more than pool capacity
 
-        # --- Phase 1: Read data from DB with minimal lock time ---
-        run_id = None
-        job_id = None
-        job_code = None
-        job_timeout = None
-        job_env = None
-        job_requirements = None
-        job_max_concurrent = 1
+        # --- Phase 1: Fetch batch of queued runs ---
+        pending_jobs: list[dict] = []
 
         db = SessionLocal()
         try:
-            result = (
+            results = (
                 db.query(JobRun, Job)
                 .join(Job, JobRun.job_id == Job.id)
                 .filter(
@@ -101,76 +96,88 @@ class QueueService:
                     Job.is_active == True,
                 )
                 .order_by(Job.priority.asc(), JobRun.queued_at.asc())
-                .first()
+                .limit(MAX_BATCH_SIZE)
+                .all()
             )
 
-            if not result:
+            if not results:
                 return
 
-            run, job = result
-            run_id = run.id
-            job_id = job.id
-            job_code = job.code
-            job_timeout = job.timeout_seconds
-            job_env = job.env_dict
-            job_requirements = getattr(job, "requirements", None)
-            job_max_concurrent = getattr(job, "max_concurrent", 1)
+            for run, job in results:
+                pending_jobs.append({
+                    "run_id": run.id,
+                    "job_id": job.id,
+                    "code": job.code,
+                    "timeout": job.timeout_seconds,
+                    "env": job.env_dict,
+                    "requirements": getattr(job, "requirements", None),
+                    "max_concurrent": getattr(job, "max_concurrent", 1),
+                })
         except Exception as e:
             logger.error(f"Queue read error: {e}")
             return
         finally:
             db.close()
 
-        # --- Phase 2: Execute (no DB session held) ---
-        try:
-            async def coro_factory(worker_id: str):
-                _db = SessionLocal()
-                try:
-                    _run = _db.query(JobRun).filter(JobRun.id == run_id).first()
-                    if _run:
-                        _run.status = "running"
-                        _run.worker_id = worker_id
-                        _run.started_at = datetime.now(timezone.utc)
-                        _db.commit()
-                finally:
-                    _db.close()
+        # --- Phase 2: Dispatch each to worker pool ---
+        for pj in pending_jobs:
+            try:
+                # Capture loop vars safely to avoid closure bugs
+                _run_id = pj["run_id"]
+                _job_id = pj["job_id"]
+                _code = pj["code"]
+                _timeout = pj["timeout"]
+                _env = pj["env"]
+                _reqs = pj["requirements"]
+                _max_c = pj["max_concurrent"]
 
-                # Resolve python path via venv manager
-                venv_mgr = get_venv_manager()
-                try:
-                    python_path = await venv_mgr.ensure_venv(job_requirements)
-                except Exception as venv_err:
-                    # Record venv failure clearly so user sees it in logs
-                    _db2 = SessionLocal()
+                async def coro_factory(worker_id: str, run_id=_run_id, job_id=_job_id,
+                                       code=_code, timeout=_timeout, env=_env,
+                                       reqs=_reqs):
+                    _db = SessionLocal()
                     try:
-                        _run2 = _db2.query(JobRun).filter(JobRun.id == run_id).first()
-                        if _run2:
-                            _run2.status = "failed"
-                            _run2.error_message = f"Venv setup failed: {venv_err}"
-                            _run2.finished_at = datetime.now(timezone.utc)
-                            _db2.commit()
+                        _run = _db.query(JobRun).filter(JobRun.id == run_id).first()
+                        if _run:
+                            _run.status = "running"
+                            _run.worker_id = worker_id
+                            _run.started_at = datetime.now(timezone.utc)
+                            _db.commit()
                     finally:
-                        _db2.close()
-                    logger.error(f"Venv setup failed for job {job_id}: {venv_err}")
-                    return
+                        _db.close()
 
-                await run_job(
-                    job_id, run_id, job_code, job_timeout,
-                    job_env, python_path=python_path,
+                    # Resolve python path via venv manager
+                    venv_mgr = get_venv_manager()
+                    try:
+                        python_path = await venv_mgr.ensure_venv(reqs)
+                    except Exception as venv_err:
+                        _db2 = SessionLocal()
+                        try:
+                            _run2 = _db2.query(JobRun).filter(JobRun.id == run_id).first()
+                            if _run2:
+                                _run2.status = "failed"
+                                _run2.error_message = f"Venv setup failed: {venv_err}"
+                                _run2.finished_at = datetime.now(timezone.utc)
+                                _db2.commit()
+                        finally:
+                            _db2.close()
+                        logger.error(f"Venv setup failed for job {job_id}: {venv_err}")
+                        return
+
+                    await run_job(job_id, run_id, code, timeout, env, python_path=python_path)
+
+                started = await pool.execute(
+                    job_id=_job_id,
+                    run_id=_run_id,
+                    max_concurrent=_max_c,
+                    coro_factory=coro_factory,
                 )
 
-            started = await pool.execute(
-                job_id=job_id,
-                run_id=run_id,
-                max_concurrent=job_max_concurrent,
-                coro_factory=coro_factory,
-            )
+                if not started:
+                    logger.debug(f"Run {_run_id} stays queued (pool/lock limit)")
+                    break  # Pool full — no point trying remaining items
 
-            if not started:
-                logger.debug(f"Run {run_id} stays queued (pool/lock limit)")
-
-        except Exception as e:
-            logger.error(f"Queue processing error: {e}")
+            except Exception as e:
+                logger.error(f"Queue processing error for run {pj.get('run_id')}: {e}")
 
     async def start_processor(self, interval: int = 5):
         """Start the queue processor loop."""
