@@ -137,7 +137,22 @@ class QueueService:
 
                 # Resolve python path via venv manager
                 venv_mgr = get_venv_manager()
-                python_path = await venv_mgr.ensure_venv(job_requirements)
+                try:
+                    python_path = await venv_mgr.ensure_venv(job_requirements)
+                except Exception as venv_err:
+                    # Record venv failure clearly so user sees it in logs
+                    _db2 = SessionLocal()
+                    try:
+                        _run2 = _db2.query(JobRun).filter(JobRun.id == run_id).first()
+                        if _run2:
+                            _run2.status = "failed"
+                            _run2.error_message = f"Venv setup failed: {venv_err}"
+                            _run2.finished_at = datetime.now(timezone.utc)
+                            _db2.commit()
+                    finally:
+                        _db2.close()
+                    logger.error(f"Venv setup failed for job {job_id}: {venv_err}")
+                    return
 
                 await run_job(
                     job_id, run_id, job_code, job_timeout,

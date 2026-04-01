@@ -102,6 +102,13 @@ async def run_job(
             env.update(env_vars)
         # Ensure subprocess uses UTF-8 output (critical for non-ASCII on Windows)
         env.setdefault("PYTHONIOENCODING", "utf-8")
+        # Suppress urllib3 InsecureRequestWarning when verify=False is used
+        # (requests library outputs noisy warnings on every HTTPS call)
+        if not settings.HTTP_SSL_VERIFY:
+            existing = env.get("PYTHONWARNINGS", "")
+            suppress = "ignore::urllib3.exceptions.InsecureRequestWarning"
+            if suppress not in existing:
+                env["PYTHONWARNINGS"] = f"{existing},{suppress}" if existing else suppress
 
         from app.websocket.manager import manager
 
@@ -141,6 +148,8 @@ async def run_job(
 
         # Collect data rows for target-table insertion
         data_rows: list[dict] = []
+        # Track last stderr lines for better error messages on failure
+        last_stderr_lines: list[str] = []
 
         async def _on_stdout(line: str):
             """Process a single stdout line."""
@@ -156,6 +165,9 @@ async def run_job(
                 await _emit("stdout", "info", line)
 
         async def _on_stderr(line: str):
+            last_stderr_lines.append(line)
+            if len(last_stderr_lines) > 10:
+                last_stderr_lines.pop(0)
             await _emit("stderr", "error", line)
 
         await _emit("system", "info", "Starting job execution...")
@@ -202,8 +214,15 @@ async def run_job(
                 await _emit("system", "info", f"Job completed successfully in {duration_ms}ms")
             else:
                 run.status = "failed"
-                run.error_message = f"Process exited with code {exit_code}"
+                # Include last stderr context for more useful error reporting
+                stderr_tail = "\n".join(last_stderr_lines[-5:]) if last_stderr_lines else ""
+                err_detail = f"Process exited with code {exit_code}"
+                if stderr_tail:
+                    err_detail += f"\n{stderr_tail}"
+                run.error_message = err_detail[:2000]
                 await _emit("system", "error", f"Job failed with exit code {exit_code}")
+                if stderr_tail:
+                    await _emit("system", "error", f"Last stderr: {stderr_tail[:500]}")
 
                 # Handle retry
                 job = db.query(Job).filter(Job.id == job_id).first()

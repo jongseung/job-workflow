@@ -64,6 +64,56 @@ class VenvManager:
                 return str(alt)
         return str(p)
 
+    def _is_venv_healthy(self, venv_dir: Path) -> bool:
+        """Check if venv is structurally complete and usable.
+
+        Validates:
+        1. python executable exists
+        2. pyvenv.cfg exists (required by Python to recognise the venv)
+        3. pyvenv.cfg is not empty / corrupted
+        """
+        venv_path = venv_dir / "venv"
+        python_exe = _venv_python(venv_path)
+
+        if not python_exe.exists():
+            logger.warning(f"venv unhealthy: python not found at {python_exe}")
+            return False
+
+        cfg_file = venv_path / "pyvenv.cfg"
+        if not cfg_file.exists():
+            logger.warning(f"venv unhealthy: pyvenv.cfg missing in {venv_path}")
+            return False
+
+        # pyvenv.cfg must contain at least 'home = ' line
+        try:
+            cfg_text = cfg_file.read_text(encoding="utf-8", errors="replace")
+            if "home" not in cfg_text.lower():
+                logger.warning(f"venv unhealthy: pyvenv.cfg corrupt in {venv_path}")
+                return False
+        except OSError as exc:
+            logger.warning(f"venv unhealthy: cannot read pyvenv.cfg: {exc}")
+            return False
+
+        return True
+
+    async def _verify_venv_runs(self, python_path: str) -> bool:
+        """Quick sanity check: run 'python --version' to ensure the venv works."""
+        try:
+            from app.services.subprocess_compat import run_subprocess
+            _, stdout, stderr, rc = await run_subprocess(
+                python_path, "--version", timeout=15,
+            )
+            if rc == 0:
+                ver = (stdout or b"").decode("utf-8", errors="replace").strip()
+                logger.debug(f"venv python verified: {ver}")
+                return True
+            err = (stderr or b"").decode("utf-8", errors="replace")[:200]
+            logger.warning(f"venv python check failed (rc={rc}): {err}")
+            return False
+        except Exception as exc:
+            logger.warning(f"venv python check error: {exc}")
+            return False
+
     async def ensure_venv(self, requirements: str | None) -> str:
         """Ensure venv exists for requirements. Returns python executable path."""
         if not requirements or not requirements.strip():
@@ -82,18 +132,23 @@ class VenvManager:
                     f"Set a shorter VENV_CACHE_DIR in .env"
                 )
 
-        # Cache hit
-        if venv_dir.exists() and _venv_python(venv_dir / "venv").exists():
+        # Cache hit — full integrity check (python + pyvenv.cfg)
+        if venv_dir.exists() and self._is_venv_healthy(venv_dir):
             self._touch_last_used(venv_dir)
             logger.info(f"venv cache hit: {req_hash}")
             return python_path
+
+        # Venv exists but is corrupted — purge and recreate
+        if venv_dir.exists():
+            logger.warning(f"venv corrupted, purging: {req_hash}")
+            shutil.rmtree(venv_dir, ignore_errors=True)
 
         # Concurrent creation guard — wait if another task is already creating
         if req_hash in self._creating:
             logger.info(f"Waiting for venv creation: {req_hash}")
             await self._creating[req_hash].wait()
             # Double-check after wait
-            if _venv_python(venv_dir / "venv").exists():
+            if self._is_venv_healthy(venv_dir):
                 self._touch_last_used(venv_dir)
                 return python_path
             raise RuntimeError(f"venv creation failed for hash {req_hash}")
@@ -102,11 +157,23 @@ class VenvManager:
         self._creating[req_hash] = event
         try:
             # Double-check after acquiring lock (another task may have just finished)
-            if venv_dir.exists() and _venv_python(venv_dir / "venv").exists():
+            if venv_dir.exists() and self._is_venv_healthy(venv_dir):
                 self._touch_last_used(venv_dir)
                 return python_path
+            # Purge any partial leftovers before fresh creation
+            if venv_dir.exists():
+                shutil.rmtree(venv_dir, ignore_errors=True)
             await self._create_venv(venv_dir, requirements, req_hash)
-            return python_path
+
+            # Post-creation verification: actually run python to confirm it works
+            final_python = self._get_python_path(venv_dir)
+            if not await self._verify_venv_runs(final_python):
+                shutil.rmtree(venv_dir, ignore_errors=True)
+                raise RuntimeError(
+                    f"venv created but python failed to run. "
+                    f"Check requirements for compatibility issues."
+                )
+            return final_python
         finally:
             event.set()
             self._creating.pop(req_hash, None)

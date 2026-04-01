@@ -381,6 +381,11 @@ async def _run_python_code(code: str, input_data: dict) -> dict:
     """Subprocess Python executor (low-level). Input via stdin, output via __OUTPUT__: line."""
     wrapper = (
         "import json as __json, sys as __sys\n"
+        "# Suppress SSL InsecureRequestWarning for verify=False usage\n"
+        "try:\n"
+        "    import urllib3 as __u3; __u3.disable_warnings(__u3.exceptions.InsecureRequestWarning)\n"
+        "except Exception:\n"
+        "    pass\n"
         "input_data = __json.loads(__sys.stdin.read() or '{}')\n"
         "result = None\n"
         "# ── user code ──\n"
@@ -397,9 +402,20 @@ async def _run_python_code(code: str, input_data: dict) -> dict:
 
         from app.services.subprocess_compat import run_subprocess
 
+        # Build subprocess env with SSL warning suppression
+        sub_env = os.environ.copy()
+        sub_env.setdefault("PYTHONIOENCODING", "utf-8")
+        from app.config import settings as _cfg
+        if not _cfg.HTTP_SSL_VERIFY:
+            existing = sub_env.get("PYTHONWARNINGS", "")
+            suppress = "ignore::urllib3.exceptions.InsecureRequestWarning"
+            if suppress not in existing:
+                sub_env["PYTHONWARNINGS"] = f"{existing},{suppress}" if existing else suppress
+
         _, stdout, stderr, returncode = await run_subprocess(
             sys.executable, "-u", tmp_path,
             stdin_data=json.dumps(input_data).encode(),
+            env=sub_env,
             timeout=300,
         )
         if returncode != 0:
@@ -481,6 +497,16 @@ async def _run_http(module: StepModule, input_data: dict, node_data: dict) -> di
     # SSL verification: use config setting (supports corporate/Windows environments)
     from app.config import settings as _settings
     ssl_verify = _settings.HTTP_SSL_VERIFY
+
+    # Suppress InsecureRequestWarning when verify=False
+    if not ssl_verify:
+        try:
+            import urllib3
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        except Exception:
+            pass
+        import warnings
+        warnings.filterwarnings("ignore", message="Unverified HTTPS request")
 
     try:
         import httpx

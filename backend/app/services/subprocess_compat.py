@@ -9,11 +9,31 @@ to bypass this limitation while keeping the main event loop non-blocking.
 from __future__ import annotations
 
 import asyncio
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 _IS_WINDOWS = sys.platform == "win32"
+
+# Windows system env vars that must NEVER be missing from subprocess environments.
+# Without these, Python/pip/venv may fail with cryptic errors like
+# "No pyvenv.cfg file" or "DLL load failed".
+_WIN_REQUIRED_VARS = frozenset({
+    "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT",
+    "TEMP", "TMP", "PATH", "USERPROFILE", "HOMEDRIVE", "HOMEPATH",
+    "APPDATA", "LOCALAPPDATA", "PROGRAMDATA",
+})
+
+
+def _ensure_windows_env(env: dict | None) -> dict | None:
+    """If env is provided on Windows, ensure critical system vars are present."""
+    if env is None or not _IS_WINDOWS:
+        return env
+    for var in _WIN_REQUIRED_VARS:
+        if var not in env and var in os.environ:
+            env[var] = os.environ[var]
+    return env
 
 
 async def run_subprocess(
@@ -30,12 +50,14 @@ async def run_subprocess(
     """
     loop = asyncio.get_running_loop()
 
+    safe_env = _ensure_windows_env(dict(env) if env else None)
+
     def _run():
         kwargs = dict(
             stdin=subprocess.PIPE if stdin_data is not None else None,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            env=env,
+            env=safe_env,
             cwd=cwd,
         )
         if _IS_WINDOWS:
@@ -72,11 +94,12 @@ class StreamingProcess:
         self._process: subprocess.Popen | None = None
 
     def start(self):
+        safe_env = _ensure_windows_env(dict(self._env) if self._env else None)
         kwargs = dict(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             stdin=subprocess.DEVNULL,
-            env=self._env,
+            env=safe_env,
             cwd=self._cwd,
         )
         # Windows: create new process group so kill() terminates entire tree

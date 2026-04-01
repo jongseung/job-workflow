@@ -1,9 +1,17 @@
 """Webhook notification service for job completion events."""
 import json
 import logging
+import warnings
 from datetime import datetime, timezone
 
 import requests
+
+# Suppress InsecureRequestWarning globally for this module
+try:
+    from urllib3.exceptions import InsecureRequestWarning
+    warnings.filterwarnings("ignore", category=InsecureRequestWarning)
+except ImportError:
+    pass
 
 logger = logging.getLogger(__name__)
 
